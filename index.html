@@ -424,6 +424,28 @@
     .nodate-hint { left: 412px; }
     .filters input[type="search"] { width: 120px; }
   }
+  /* スマホ: メモ・進捗列は非表示（タップで編集画面から見られる）。チャートを広く */
+  @media (max-width: 600px) {
+    .app { padding: 8px 8px 6px; }
+    .topbar { gap: 6px; padding-bottom: 6px; }
+    .topbar h1 { font-size: 15px; }
+    .btn { padding: 5px 9px; font-size: 12px; }
+    .stats { grid-template-columns: repeat(4, 1fr); gap: 5px; }
+    .tile { padding: 4px 8px 3px; border-radius: 8px; }
+    .tile .label { font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tile .value { font-size: 16px; }
+    .tile .sub { display: none; }
+    .g-memo, .g-prog { display: none; }
+    .g-left { width: 148px; min-width: 148px; }
+    .g-row:not(.g-head) .g-left { padding-right: 54px; }
+    .del-btn { display: none; }
+    .nodate-hint { left: 160px; }
+    .filters { gap: 6px; }
+  }
+  /* タッチ端末はホバーが無いので削除ボタンを常時表示 */
+  @media (hover: none) and (min-width: 601px) {
+    .del-btn { opacity: .55; }
+  }
 </style>
 </head>
 <body>
@@ -1762,11 +1784,19 @@ function renderAll() {
   renderStats();
   if (state.view === 'gantt') renderGantt(); else renderTable();
 }
+function stickyWidth() {
+  let w = 0;
+  for (const sel of ['.g-row .g-left', '.g-row .g-memo', '.g-row .g-prog']) {
+    const e = document.querySelector(sel);
+    if (e && e.offsetParent !== null) w += e.offsetWidth;
+  }
+  return w || 580;
+}
 function scrollToToday() {
   const sc = $('ganttScroll');
   const { start } = dateRange();
   const x = diffD(start, TODAY) * PX[state.scale];
-  sc.scrollLeft = Math.max(0, x - (sc.clientWidth - 580) * 0.35);
+  sc.scrollLeft = Math.max(0, x - Math.max(60, (sc.clientWidth - stickyWidth()) * 0.35));
 }
 
 function init() {
