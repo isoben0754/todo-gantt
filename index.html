@@ -1,0 +1,1924 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>タスクスケジュール管理 — ガントチャート</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --row-line: rgba(11,11,11,0.09);
+    --weekend: rgba(11,11,11,0.033);
+    --hover-wash: rgba(11,11,11,0.045);
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+    --status-critical: #d03b3b;
+    --success-text: #006300;
+    --accent: #2a78d6;
+    --today-line: #d03b3b;
+    --shadow: 0 8px 28px rgba(11,11,11,.13);
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --row-line: rgba(255,255,255,0.11);
+    --weekend: rgba(255,255,255,0.045);
+    --hover-wash: rgba(255,255,255,0.06);
+    --success-text: #0ca30c;
+    --accent: #3987e5;
+    --shadow: 0 8px 28px rgba(0,0,0,.5);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    overflow: hidden; /* ページ自体はスクロールさせない */
+  }
+
+  .app {
+    max-width: 1400px; margin: 0 auto; padding: 14px 24px 10px;
+    height: 100vh; height: 100dvh;
+    display: flex; flex-direction: column;
+  }
+
+  /* ---------- Header ---------- */
+  header.topbar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 0 0 8px; flex: none;
+  }
+  .topbar h1 { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: .01em; }
+  .topbar .date-note { color: var(--text-muted); font-size: 13px; }
+  .save-note { color: var(--success-text); font-size: 12px; font-weight: 600; opacity: 0; transition: opacity .4s; }
+  .save-note.show { opacity: 1; }
+  .topbar .spacer { flex: 1; }
+  button, select, input[type="search"], input[type="text"], input[type="date"], input[type="number"], textarea {
+    font: inherit; color: var(--text-primary);
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 13px; cursor: pointer;
+    font-size: 13px; font-weight: 500; position: relative;
+  }
+  .btn:hover { background: var(--hover-wash); }
+  .btn:disabled { opacity: .35; cursor: default; pointer-events: none; }
+  .btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn .dirty-dot {
+    position: absolute; top: -4px; right: -4px; width: 10px; height: 10px;
+    border-radius: 50%; background: var(--status-critical);
+    border: 2px solid var(--page); display: none;
+  }
+  .btn.is-dirty .dirty-dot { display: block; }
+
+  /* ---------- Stat tiles ---------- */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 8px; flex: none; }
+  .tile {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 10px; padding: 6px 14px 5px;
+  }
+  .tile .label { font-size: 11px; color: var(--text-secondary); }
+  .tile .value { font-size: 19px; font-weight: 600; line-height: 1.25; }
+  .tile .sub { font-size: 11.5px; color: var(--text-muted); }
+  .tile.alert .value { color: var(--status-critical); }
+  .tile.alert .value .ico { font-size: 16px; vertical-align: 2px; }
+
+  /* ---------- Filter row ---------- */
+  .filters {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 8px; flex: none;
+  }
+  .filters select, .filters input[type="search"] {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 10px; font-size: 13px;
+  }
+  .filters input[type="search"] { width: 170px; }
+  .seg {
+    display: inline-flex; background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+  .seg button {
+    border: none; background: transparent; padding: 6px 13px; cursor: pointer;
+    font-size: 13px; color: var(--text-secondary); border-right: 1px solid var(--border);
+  }
+  .seg button:last-child { border-right: none; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
+  .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); cursor: pointer; }
+
+  /* ---------- Gantt ---------- */
+  .board {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+    flex: 1; min-height: 0; display: flex; flex-direction: column;
+  }
+  .gantt-scroll { overflow: auto; flex: 1; min-height: 0; position: relative; }
+  .gantt-inner { position: relative; min-width: max-content; }
+
+  .g-row { display: flex; min-width: max-content; }
+  .g-left {
+    position: sticky; left: 0; z-index: 5;
+    width: 240px; min-width: 240px;
+    background: var(--surface-1);
+    border-right: 1px solid var(--grid);
+    border-bottom: 1px solid var(--row-line);
+    padding: 3px 10px 3px 12px;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  /* 行全体を分類色でほんのり着色 */
+  .g-row:not(.g-head) .g-left,
+  .g-row:not(.g-head) .g-memo,
+  .g-row:not(.g-head) .g-prog {
+    background: color-mix(in srgb, var(--surface-1) 84%, var(--row-tint, transparent));
+  }
+  .g-row:not(.g-head) .g-timeline {
+    background: color-mix(in srgb, transparent 84%, var(--row-tint, transparent));
+  }
+  .g-row:hover .g-left { background: color-mix(in srgb, var(--surface-1) 76%, var(--row-tint, var(--text-primary))) !important; }
+  :root[data-theme="dark"] .g-row:not(.g-head) .g-left,
+  :root[data-theme="dark"] .g-row:not(.g-head) .g-memo,
+  :root[data-theme="dark"] .g-row:not(.g-head) .g-prog {
+    background: color-mix(in srgb, var(--surface-1) 72%, var(--row-tint, transparent));
+  }
+  :root[data-theme="dark"] .g-row:not(.g-head) .g-timeline {
+    background: color-mix(in srgb, transparent 72%, var(--row-tint, transparent));
+  }
+  :root[data-theme="dark"] .g-row:hover .g-left,
+  :root[data-theme="dark"] .g-row:hover .g-memo,
+  :root[data-theme="dark"] .g-row:hover .g-prog {
+    background: color-mix(in srgb, var(--surface-1) 60%, var(--row-tint, var(--text-primary))) !important;
+  }
+  .g-timeline {
+    position: relative; border-bottom: 1px solid var(--row-line);
+    flex: 0 0 auto;
+  }
+
+  /* header rows */
+  .g-head { position: sticky; top: 0; z-index: 8; background: var(--surface-1); }
+  .g-head .g-left { z-index: 9; justify-content: flex-end; padding-bottom: 8px; border-bottom: 1px solid var(--axis); }
+  .g-head .g-timeline { border-bottom: 1px solid var(--axis); }
+  .g-head .month-cell {
+    position: absolute; top: 4px; font-size: 11.5px; font-weight: 600;
+    color: var(--text-secondary); white-space: nowrap; padding-left: 6px;
+    border-left: 1px solid var(--grid); height: 18px;
+  }
+  .g-head .unit-cell {
+    position: absolute; top: 24px; height: 22px; font-size: 10.5px;
+    color: var(--text-muted); display: flex; align-items: center; justify-content: center;
+    border-left: 1px solid var(--grid); overflow: hidden; white-space: nowrap;
+  }
+  .g-head .unit-cell.today-unit { color: var(--text-primary); font-weight: 700; }
+  .left-head-label { font-size: 11.5px; color: var(--text-muted); font-weight: 600; }
+
+  /* row content */
+  .task-name { font-weight: 600; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-meta { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--text-muted); margin-top: 0; }
+  .g-memo, .g-prog {
+    position: sticky; z-index: 5;
+    background: var(--surface-1);
+    border-right: 1px solid var(--grid);
+    border-bottom: 1px solid var(--row-line);
+    padding: 3px 10px;
+    font-size: 10px; line-height: 1.4; color: var(--text-secondary);
+    white-space: pre-wrap; word-break: break-word;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .g-memo { left: 240px; width: 220px; min-width: 220px; }
+  .g-prog { left: 460px; width: 120px; min-width: 120px; }
+  .g-row:hover .g-memo, .g-row:hover .g-prog { background: color-mix(in srgb, var(--surface-1) 76%, var(--row-tint, var(--text-primary))) !important; }
+  .memo-link { color: var(--accent); text-decoration: underline; word-break: break-all; }
+  .memo-link:hover { filter: brightness(1.15); }
+  .g-head .g-memo, .g-head .g-prog { z-index: 9; justify-content: flex-end; padding-bottom: 8px; border-bottom: 1px solid var(--axis); }
+  .cat-chip { display: inline-flex; align-items: center; gap: 4px; }
+  .cat-chip .sw { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .badge { display: inline-flex; align-items: center; gap: 3px; font-size: 9.5px; font-weight: 600; }
+  .badge.overdue { color: var(--status-critical); }
+  .badge.done { color: var(--success-text); }
+  .today-flag { color: var(--accent); font-weight: 700; font-size: 9.5px; }
+  .g-row:not(.g-head) .g-left { padding-right: 86px; }
+  .del-btn {
+    position: absolute; right: 58px; top: 50%; transform: translateY(-50%);
+    width: 20px; height: 20px; line-height: 1; font-size: 13px;
+    border: none; border-radius: 50%; background: transparent;
+    color: var(--text-muted); cursor: pointer; padding: 0;
+    opacity: 0; transition: opacity .15s;
+  }
+  .g-row:hover .del-btn, .del-btn:focus-visible { opacity: 1; }
+  .del-btn:hover { background: color-mix(in srgb, var(--status-critical) 12%, transparent); color: var(--status-critical); }
+  .today-toggle {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    font-size: 8.5px; font-weight: 700; letter-spacing: .02em;
+    border: 1px solid var(--border); border-radius: 99px; padding: 2px 7px;
+    background: transparent; color: var(--text-muted); cursor: pointer;
+  }
+  .today-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  .today-toggle[aria-pressed="true"] { background: var(--accent); border-color: transparent; color: #fff; }
+  .today-toggle[aria-pressed="true"]:hover { filter: brightness(1.1); color: #fff; }
+
+  /* grid background columns */
+  .col-line { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--grid); pointer-events: none; }
+  .col-weekend { position: absolute; top: 0; bottom: 0; background: var(--weekend); pointer-events: none; }
+  .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--today-line); z-index: 4; pointer-events: none; }
+  .today-tag {
+    position: sticky; top: 0; z-index: 7;
+  }
+  .today-label {
+    position: absolute; top: 26px; transform: translateX(-50%);
+    background: var(--today-line); color: #fff; font-size: 10px; font-weight: 700;
+    padding: 1px 6px; border-radius: 99px; z-index: 7; pointer-events: none;
+  }
+
+  /* bars */
+  .bar {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    height: 15px; border-radius: 4px; cursor: grab; z-index: 2;
+    touch-action: none;
+  }
+  .bar:active { cursor: grabbing; }
+  .bar .base { position: absolute; inset: 0; border-radius: 4px; background: var(--c); }
+  .bar.done-bar { opacity: .45; }
+  .bar .handle {
+    position: absolute; top: -3px; bottom: -3px; width: 8px; cursor: ew-resize; z-index: 3;
+  }
+  .bar .handle.l { left: -4px; } .bar .handle.r { right: -4px; }
+  .bar:hover .base, .bar.dragging .base { filter: brightness(1.12); }
+  .bar-label {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    font-size: 9.5px; color: var(--text-secondary); white-space: nowrap;
+    pointer-events: none; z-index: 2;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .note-inline {
+    color: var(--text-muted); font-weight: 400; font-size: 9px;
+    max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .note-inline::before {
+    content: ''; width: 5px; height: 5px; flex: none;
+    border: 1px solid var(--text-muted); border-radius: 50%;
+  }
+  .milestone {
+    position: absolute; top: 50%; width: 10px; height: 10px;
+    transform: translate(-50%, -50%) rotate(45deg);
+    background: var(--c); border-radius: 2px; cursor: grab; z-index: 2;
+    box-shadow: 0 0 0 2px var(--surface-1); touch-action: none;
+  }
+  .milestone::after { content: ''; position: absolute; inset: -8px; } /* つかみやすい当たり判定 */
+  .milestone.done-ms { opacity: .45; }
+  .nodate-hint {
+    position: sticky; left: 592px; display: inline-flex; align-items: center; gap: 8px;
+    font-size: 10px; color: var(--text-muted); padding: 5px 4px; cursor: pointer;
+  }
+  .nodate-hint:hover { color: var(--accent); text-decoration: underline; }
+
+  /* tooltip */
+  .tip {
+    position: fixed; z-index: 50; background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow);
+    padding: 8px 12px; font-size: 12px; max-width: 320px; pointer-events: none;
+    display: none;
+  }
+  .tip .t-title { font-weight: 700; font-size: 12.5px; margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
+  .tip .t-title .sw { width: 10px; height: 3px; border-radius: 2px; }
+  .tip .t-row { display: flex; gap: 8px; }
+  .tip .t-row .k { color: var(--text-muted); min-width: 3.5em; }
+  .tip .t-row .v { font-weight: 600; }
+  .tip .t-note { color: var(--text-secondary); margin-top: 4px; white-space: pre-wrap; font-size: 11.5px; }
+
+  /* ---------- Table view ---------- */
+  .table-wrap { overflow: auto; flex: 1; min-height: 0; }
+  table.list { border-collapse: collapse; width: 100%; font-size: 12px; }
+  table.list th {
+    position: sticky; top: 0; background: var(--surface-1); z-index: 2;
+    text-align: left; font-size: 11.5px; color: var(--text-muted); font-weight: 600;
+    border-bottom: 1px solid var(--axis); padding: 6px 10px; white-space: nowrap;
+  }
+  table.list td { border-bottom: 1px solid var(--row-line); padding: 4px 10px; vertical-align: top; }
+  table.list tbody tr { background: color-mix(in srgb, var(--surface-1) 84%, var(--row-tint, transparent)); }
+  :root[data-theme="dark"] table.list tbody tr { background: color-mix(in srgb, var(--surface-1) 72%, var(--row-tint, transparent)); }
+  table.list tr:hover td { background: var(--hover-wash); }
+  table.list td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.list .note-cell { color: var(--text-secondary); font-size: 11px; white-space: pre-wrap; max-width: 340px; }
+  .mini-btn {
+    border: 1px solid var(--border); background: transparent; border-radius: 6px;
+    padding: 2px 9px; font-size: 12px; cursor: pointer; color: var(--text-secondary);
+  }
+  .mini-btn:hover { background: var(--hover-wash); color: var(--text-primary); }
+
+  .foot-note {
+    color: var(--text-muted); font-size: 11px; margin: 7px 0 0; flex: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* ---------- Modal ---------- */
+  dialog {
+    border: 1px solid var(--border); border-radius: 14px; padding: 0;
+    background: var(--surface-1); color: var(--text-primary);
+    width: min(520px, 92vw); box-shadow: var(--shadow);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.35); }
+  .m-head { padding: 16px 20px 0; font-size: 16px; font-weight: 700; }
+  .m-body { padding: 12px 20px 4px; display: grid; gap: 11px; }
+  .fld { display: grid; gap: 4px; }
+  .fld label { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+  .fld input, .fld select, .fld textarea {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 10px; font-size: 13.5px; width: 100%;
+  }
+  .fld textarea { resize: vertical; min-height: 60px; }
+  .fld-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .wd-picks { display: flex; gap: 6px; flex-wrap: wrap; }
+  .wd-picks label {
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px;
+    cursor: pointer; font-size: 12.5px; color: var(--text-secondary); user-select: none;
+  }
+  .wd-picks input { display: none; }
+  .date-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .date-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border); border-radius: 99px; padding: 2px 10px;
+    font-size: 12px; color: var(--text-secondary);
+  }
+  .date-chip button {
+    border: none; background: none; cursor: pointer; padding: 0;
+    color: var(--text-muted); font-size: 12px; line-height: 1;
+  }
+  .date-chip button:hover { color: var(--status-critical); }
+  .wd-picks label:has(input:checked) { background: var(--accent); border-color: transparent; color: #fff; font-weight: 600; }
+  .occ {
+    position: absolute; top: 50%; width: 10px; height: 10px;
+    transform: translate(-50%, -50%) rotate(45deg);
+    background: var(--c); border-radius: 2px; z-index: 2;
+    box-shadow: 0 0 0 2px var(--surface-1);
+  }
+  .occ-label { font-size: 9px; color: var(--text-muted); }
+  .m-foot { display: flex; gap: 8px; padding: 14px 20px 18px; }
+  .m-foot .grow { flex: 1; }
+  .btn.danger { color: var(--status-critical); }
+  .btn.danger:hover { background: color-mix(in srgb, var(--status-critical) 10%, transparent); }
+
+  /* ---------- Category manager ---------- */
+  .cat-row { display: flex; align-items: center; gap: 10px; }
+  .cat-row .sw { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+  .cat-row input[type="text"] {
+    flex: 1; background: var(--page); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 10px; font-size: 13px; min-width: 0;
+  }
+  .cat-row .use { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; width: 4.5em; text-align: right; }
+  .cat-row .mini-btn:disabled { opacity: .35; cursor: default; }
+  .cat-add { display: flex; gap: 8px; margin-top: 4px; }
+  .cat-add input {
+    flex: 1; background: var(--page); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 10px; font-size: 13px; min-width: 0;
+  }
+  .cat-add select {
+    flex: 1; min-width: 0; width: auto;
+    background: var(--page); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 10px; font-size: 13px;
+  }
+
+  .sync-help { font-size: 12px; color: var(--text-secondary); margin: 0; line-height: 1.6; }
+  .btn.synced { color: var(--success-text); }
+
+  /* ---------- Undo toast ---------- */
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 12px);
+    background: var(--surface-1); border: 1px solid var(--border);
+    box-shadow: var(--shadow); border-radius: 10px; padding: 10px 16px;
+    display: flex; gap: 14px; align-items: center; font-size: 13px;
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 60;
+    max-width: 90vw;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  .toast-btn {
+    border: none; background: transparent; color: var(--accent);
+    font-weight: 700; cursor: pointer; font-size: 13px; padding: 0; white-space: nowrap;
+  }
+  .toast-btn:hover { text-decoration: underline; }
+
+  .hidden { display: none !important; }
+  @media (max-width: 720px) {
+    .g-left { width: 170px; min-width: 170px; }
+    .g-memo { left: 170px; width: 130px; min-width: 130px; }
+    .g-prog { left: 300px; width: 100px; min-width: 100px; }
+    .nodate-hint { left: 412px; }
+    .filters input[type="search"] { width: 120px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <h1>タスクスケジュール管理</h1>
+    <span class="date-note" id="todayNote"></span>
+    <span class="save-note" id="saveNote"></span>
+    <span class="spacer"></span>
+    <button class="btn primary" id="btnAdd">＋ 新規タスク</button>
+    <button class="btn" id="btnUndoTop" title="一つ前のアクションに戻す（Ctrl+Z）" disabled>↩ 戻す</button>
+    <button class="btn" id="btnXlsx" title="Excel形式でダウンロード">Excel出力<span class="dirty-dot"></span></button>
+    <button class="btn" id="btnJson" title="JSON形式で保存（再読込用）">JSON保存</button>
+    <button class="btn" id="btnImport" title="JSON / Excelファイルを読み込み">読込</button>
+    <button class="btn" id="btnReset" title="編集内容を消去して元のTo Doリストに戻す">リセット</button>
+    <input type="file" id="fileInput" accept=".json,.xlsx" class="hidden">
+    <button class="btn" id="btnSync" title="GitHub Gistでどこからでも同じデータを見られるようにする">☁ 同期</button>
+    <button class="btn" id="btnTheme" title="ライト/ダーク切替">◐</button>
+  </header>
+
+  <section class="stats" id="stats"></section>
+
+  <div class="filters">
+    <div class="seg" id="scaleSeg" role="group" aria-label="表示スケール">
+      <button data-scale="day">日</button>
+      <button data-scale="week" aria-pressed="true">週</button>
+      <button data-scale="month">月</button>
+    </div>
+    <select id="fSort" aria-label="並び順">
+      <option value="due" selected>並び順: 期日</option>
+      <option value="cat">並び順: 分類</option>
+    </select>
+    <select id="fCat" aria-label="分類で絞り込み"></select>
+    <button class="mini-btn" id="btnCatMgr" title="分類の追加・名称変更・削除">分類管理</button>
+    <select id="fStatus" aria-label="状態で絞り込み">
+      <option value="">状態: すべて</option>
+      <option value="overdue">⚠ 期限超過</option>
+      <option value="todo">未着手</option>
+      <option value="doing">進行中</option>
+      <option value="done">完了</option>
+    </select>
+    <label class="chk"><input type="checkbox" id="fToday"> Today（今日やる）のみ</label>
+    <button class="mini-btn" id="btnClearToday" title="全タスクのTODAYを解除">TODAY全解除</button>
+    <input type="search" id="fSearch" placeholder="タスク検索…" aria-label="タスク検索">
+    <span class="spacer" style="flex:1"></span>
+    <div class="seg" id="viewSeg" role="group" aria-label="表示切替">
+      <button data-view="gantt" aria-pressed="true">ガント</button>
+      <button data-view="table">テーブル</button>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="gantt-scroll" id="ganttScroll"><div class="gantt-inner" id="gantt"></div></div>
+    <div class="table-wrap hidden" id="tableWrap"></div>
+  </div>
+
+  <p class="foot-note" id="footNote"></p>
+</div>
+
+<div class="tip" id="tip"></div>
+<div class="toast" id="undoToast"><span id="undoMsg"></span><button type="button" class="toast-btn" id="btnUndo">元に戻す</button></div>
+
+<dialog id="syncDlg">
+  <div class="m-head">クラウド同期（GitHub Gist）</div>
+  <div class="m-body">
+    <p class="sync-help">GitHubのアクセストークン（gist権限のみ）を貼り付けて「接続」すると、あなたのGitHubアカウント内の非公開Gistにデータが自動同期されます。別のPCやブラウザでも同じトークンを入れれば、同じデータが表示されます。<br>
+    <a class="memo-link" href="https://github.com/settings/tokens/new?scopes=gist&description=ToDo-Gantt-Sync" target="_blank" rel="noopener noreferrer">→ トークンを作成する（gist権限が選択された状態で開きます）</a></p>
+    <div class="fld"><label for="syncToken">アクセストークン</label><input id="syncToken" type="password" placeholder="ghp_… / github_pat_…" autocomplete="off"></div>
+    <div id="syncInfo" style="font-size:12px;color:var(--text-muted);min-height:1.2em"></div>
+  </div>
+  <div class="m-foot">
+    <button type="button" class="btn danger" id="btnSyncOff">連携解除</button>
+    <span class="grow"></span>
+    <button type="button" class="btn" id="btnPull">クラウドから読込</button>
+    <button type="button" class="btn" id="btnPush">今すぐ保存</button>
+    <button type="button" class="btn primary" id="btnSyncSave">接続</button>
+    <button type="button" class="btn" id="btnSyncClose">閉じる</button>
+  </div>
+</dialog>
+
+<dialog id="catDlg">
+  <div class="m-head">分類管理</div>
+  <div class="m-body" id="catListBody" style="max-height:52vh;overflow:auto"></div>
+  <div class="m-body">
+    <div class="cat-add">
+      <input id="newCatName" type="text" placeholder="新しい分類名">
+      <button type="button" class="btn" id="btnAddCat">追加</button>
+    </div>
+  </div>
+  <div class="m-foot">
+    <span class="grow" style="font-size:11.5px;color:var(--text-muted)">名前を書き換えると全タスクに反映されます。使用中の分類は削除できません。</span>
+    <button type="button" class="btn primary" id="btnCloseCat">閉じる</button>
+  </div>
+</dialog>
+
+<dialog id="editDlg">
+  <form method="dialog" id="editForm">
+    <div class="m-head" id="dlgTitle">タスクを編集</div>
+    <div class="m-body">
+      <div class="fld"><label for="eName">タスク名</label><input id="eName" type="text" required></div>
+      <div class="fld-row">
+        <div class="fld"><label for="eCat">分類</label><select id="eCat"></select></div>
+        <div class="fld"><label for="eCatNew">新しい分類（任意）</label><input id="eCatNew" type="text" placeholder="入力すると新規作成"></div>
+      </div>
+      <div class="fld"><label for="eNote">概要・メモ</label><textarea id="eNote"></textarea></div>
+      <div class="fld"><label for="eProgNote">進捗状況</label><textarea id="eProgNote" style="min-height:44px" placeholder="例: 先方の回答待ち／ドラフト作成中 など"></textarea></div>
+      <div class="fld"><label for="eRepeat">定期タスク</label>
+        <select id="eRepeat">
+          <option value="">なし（日付を手動設定）</option>
+          <option value="weekly">毎週（曜日指定）</option>
+          <option value="monthly">毎月（同じ日）</option>
+          <option value="quarterly">3カ月毎／四半期（同じ日）</option>
+          <option value="yearly">毎年（同じ月日）</option>
+          <option value="dates">複数の日付を指定（マニュアル）</option>
+        </select>
+      </div>
+      <div class="fld hidden" id="wdRow"><label>曜日（複数選択可）</label>
+        <div class="wd-picks" id="wdPicks">
+          <label class="wd"><input type="checkbox" value="1">月</label>
+          <label class="wd"><input type="checkbox" value="2">火</label>
+          <label class="wd"><input type="checkbox" value="3">水</label>
+          <label class="wd"><input type="checkbox" value="4">木</label>
+          <label class="wd"><input type="checkbox" value="5">金</label>
+          <label class="wd"><input type="checkbox" value="6">土</label>
+          <label class="wd"><input type="checkbox" value="0">日</label>
+        </div>
+      </div>
+      <div class="fld hidden" id="mdRow"><label for="eMDay">毎月の日付（1〜31。月末にしたい場合は31）</label><input id="eMDay" type="number" min="1" max="31" value="1"></div>
+      <div class="fld hidden" id="qRow"><label>3カ月毎の設定（基準月と日付。例: 基準1月・31日 → 1・4・7・10月の月末）</label>
+        <div class="cat-add">
+          <select id="eQMonth">
+            <option value="1">基準: 1月（1・4・7・10月）</option>
+            <option value="2">基準: 2月（2・5・8・11月）</option>
+            <option value="3">基準: 3月（3・6・9・12月）</option>
+            <option value="4">基準: 4月（1・4・7・10月）</option>
+            <option value="5">基準: 5月（2・5・8・11月）</option>
+            <option value="6">基準: 6月（3・6・9・12月）</option>
+            <option value="7">基準: 7月（1・4・7・10月）</option>
+            <option value="8">基準: 8月（2・5・8・11月）</option>
+            <option value="9">基準: 9月（3・6・9・12月）</option>
+            <option value="10">基準: 10月（1・4・7・10月）</option>
+            <option value="11">基準: 11月（2・5・8・11月）</option>
+            <option value="12">基準: 12月（3・6・9・12月）</option>
+          </select>
+          <span style="display:inline-flex;align-items:center;gap:4px;flex:none">
+            <input id="eQDay" type="number" min="1" max="31" value="1" title="日付（1〜31）" style="width:70px;flex:none;text-align:right">
+            <span style="font-size:12.5px;color:var(--text-secondary)">日</span>
+          </span>
+        </div>
+      </div>
+      <div class="fld hidden" id="yRow"><label>毎年の月日</label>
+        <div class="cat-add">
+          <select id="eYMonth">
+            <option value="1">1月</option><option value="2">2月</option><option value="3">3月</option>
+            <option value="4">4月</option><option value="5">5月</option><option value="6">6月</option>
+            <option value="7">7月</option><option value="8">8月</option><option value="9">9月</option>
+            <option value="10">10月</option><option value="11">11月</option><option value="12">12月</option>
+          </select>
+          <span style="display:inline-flex;align-items:center;gap:4px;flex:none">
+            <input id="eYDay" type="number" min="1" max="31" value="1" title="日付（1〜31）" style="width:70px;flex:none;text-align:right">
+            <span style="font-size:12.5px;color:var(--text-secondary)">日</span>
+          </span>
+        </div>
+      </div>
+      <div class="fld hidden" id="mdatesRow"><label for="eDateAdd">日付を追加（何個でも指定できます）</label>
+        <div class="cat-add"><input id="eDateAdd" type="date"><button type="button" class="btn" id="btnAddDate">追加</button></div>
+        <div class="date-chips" id="dateChips"></div>
+      </div>
+      <div class="fld-row" id="dateRow">
+        <div class="fld"><label for="eStart">開始日</label><input id="eStart" type="date"></div>
+        <div class="fld"><label for="eDue">期日</label><input id="eDue" type="date"></div>
+      </div>
+      <div class="fld-row">
+        <div class="fld"><label for="eStatus">ステータス</label>
+          <select id="eStatus">
+            <option value="todo">未着手</option>
+            <option value="doing">進行中</option>
+            <option value="done">完了</option>
+          </select>
+        </div>
+        <div class="fld"><label>&nbsp;</label><label class="chk" style="padding-top:7px"><input type="checkbox" id="eToday"> Today（今日やる）</label></div>
+      </div>
+    </div>
+    <div class="m-foot">
+      <button type="button" class="btn danger" id="btnDelete">削除</button>
+      <span class="grow"></span>
+      <button type="button" class="btn" id="btnCancel">キャンセル</button>
+      <button type="submit" class="btn primary" id="btnSave">保存</button>
+    </div>
+  </form>
+</dialog>
+<script>
+'use strict';
+/* ============ データ ============ */
+const SLOT_COLORS = [ // 検証済みカテゴリカルパレット（固定順）[light, dark]
+  ['#2a78d6', '#3987e5'], ['#008300', '#008300'], ['#e87ba4', '#d55181'],
+  ['#eda100', '#c98500'], ['#1baf7a', '#199e70'], ['#eb6834', '#d95926'],
+  ['#4a3aa7', '#9085e9'], ['#e34948', '#e66767'],
+];
+const EXTRA_COLORS = [ // 9分類目以降に使う追加パレット（既存8色と被らない色）
+  ['#0d7f8c', '#2fa9b8'], // 青緑
+  ['#9c5b21', '#bf7f45'], // 茶
+  ['#77801a', '#98a233'], // オリーブ
+  ['#a333c8', '#b95edb'], // 紫ピンク
+  ['#5b6b8c', '#8b9ac0'], // ブルーグレー
+  ['#c2185b', '#e0447f'], // 深ピンク
+  ['#4f8f6b', '#6fb08c'], // 灰緑
+  ['#79695a', '#9a887a'], // ウォームグレー
+];
+const FALLBACK_COLOR = ['#898781', '#898781'];
+const DEFAULT_CAT_SLOT = { 'ADMI':0, '本社依頼':1, 'CE':2, '監査':3, '予算・見通し':4, '訪問スケジュール':5, 'Volvo':6, '個人雑務':7 };
+let cats = [ // 分類マスタ（タスクと独立して管理）
+  { name:'ADMI', color: SLOT_COLORS[0] },
+  { name:'本社依頼', color: SLOT_COLORS[1] },
+  { name:'CE', color: SLOT_COLORS[2] },
+  { name:'監査', color: SLOT_COLORS[3] },
+  { name:'予算・見通し', color: SLOT_COLORS[4] },
+  { name:'訪問スケジュール', color: SLOT_COLORS[5] },
+  { name:'Volvo', color: SLOT_COLORS[6] },
+  { name:'個人雑務', color: SLOT_COLORS[7] },
+];
+function ensureCat(name) { // マスタに無ければ空きスロット色で追加
+  name = String(name || '').trim();
+  if (!name || cats.some(c => c.name === name)) return;
+  let color = null;
+  const slot = DEFAULT_CAT_SLOT[name];
+  if (slot !== undefined && !cats.some(c => c.color[0] === SLOT_COLORS[slot][0])) color = SLOT_COLORS[slot];
+  if (!color) color = [...SLOT_COLORS, ...EXTRA_COLORS].find(sc => !cats.some(c => c.color[0] === sc[0]));
+  if (!color) { // 16色も使い切ったら黄金角で自動生成（既存と重ならない色相）
+    const hue = Math.round((cats.length * 137.508) % 360);
+    color = [`hsl(${hue} 52% 40%)`, `hsl(${hue} 55% 62%)`];
+  }
+  cats.push({ name, color });
+}
+
+let tasks = []; // ホスティング版: データは同期またはファイル読込で取得
+let nextId = 1;
+let dirty = false;
+
+/* ============ ブラウザ内保存 ============ */
+const INITIAL = JSON.parse(JSON.stringify(tasks));
+const INITIAL_CATS = JSON.parse(JSON.stringify(cats));
+const STORE_KEY = 'gantt_todo_v1';
+let storageOK = false;
+try { // 環境によってはストレージが使えないため必ず検出する
+  const k = '__test_' + STORE_KEY;
+  localStorage.setItem(k, '1'); localStorage.removeItem(k);
+  storageOK = true;
+} catch (e) { storageOK = false; }
+let saveTimer = null;
+function persist() {
+  if (!storageOK) return;
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({ v: 2, tasks, nextId, cats, updatedAt: lastModified }));
+    const n = $('saveNote');
+    n.textContent = '✓ このブラウザに保存しました';
+    n.classList.add('show');
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => n.classList.remove('show'), 2200);
+  } catch (e) { /* 容量超過などは無視（エクスポートで退避可能） */ }
+}
+function loadPersisted() {
+  if (!storageOK) return;
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return;
+    const obj = JSON.parse(raw);
+    if (Array.isArray(obj.tasks) && obj.tasks.length) {
+      tasks = obj.tasks;
+      nextId = +obj.nextId || Math.max(...tasks.map(t => t.id)) + 1;
+      if (Array.isArray(obj.cats) && obj.cats.length) {
+        cats = [];
+        for (const c of obj.cats) ensureCat(c && c.name);
+      }
+      for (const t of tasks) ensureCat(t.cat);
+      lastModified = +obj.updatedAt || 0;
+    }
+  } catch (e) { /* 壊れたデータは初期値で継続 */ }
+}
+
+/* ============ 状態 ============ */
+const state = { scale:'week', view:'gantt', fCat:'', fStatus:'', fToday:false, fSearch:'', sort:'due' };
+const PX = { day:36, week:13, month:4.4 };
+const ROW_H = 34;
+
+/* ============ 日付ユーティリティ ============ */
+const DAY = 86400000;
+const p = s => { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); };
+const f = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const addD = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate()+n);
+const diffD = (a, b) => Math.round((b - a) / DAY);
+const TODAY = new Date(); TODAY.setHours(0,0,0,0);
+const fmtMD = s => { const d = p(s); return `${d.getMonth()+1}/${d.getDate()}`; };
+const WD = ['日','月','火','水','木','金','土'];
+
+/* ============ ヘルパー ============ */
+const $ = id => document.getElementById(id);
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+const isDark = () => document.documentElement.dataset.theme === 'dark';
+const URL_RE = /(https?:\/\/[^\s<>"')\]]+)/g;
+function renderLinkedText(container, text) { // URLだけ<a>にし、他はテキストとして安全に挿入
+  for (const part of String(text || '').split(URL_RE)) {
+    if (/^https?:\/\//.test(part)) {
+      const a = el('a', 'memo-link', part);
+      a.href = part;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.title = part;
+      a.addEventListener('click', ev => ev.stopPropagation()); // 編集画面を開かずリンクへ
+      container.append(a);
+    } else if (part) {
+      container.append(document.createTextNode(part));
+    }
+  }
+}
+function catColor(cat) {
+  const c = cats.find(x => x.name === cat);
+  const pair = c ? c.color : FALLBACK_COLOR;
+  return isDark() ? pair[1] : pair[0];
+}
+const CAT_YOMI = { // 並べ替え用の読み仮名（ABC → あいうえお順）
+  '監査': 'かんさ',
+  '個人雑務': 'こじんざつむ',
+  '訪問スケジュール': 'ほうもんすけじゅーる',
+  '本社依頼': 'ほんしゃいらい',
+  '予算・見通し': 'よさんみとおし',
+};
+const catKey = c => CAT_YOMI[c] || c;
+function catList() { // マスタ全件（タスクの有無に関係なく）ABC→あいうえお順
+  for (const t of tasks) ensureCat(t.cat); // 念のための整合性確保
+  return cats.map(c => c.name).sort((a, b) => catKey(a).localeCompare(catKey(b), 'ja'));
+}
+function dispStatus(t) { // 表示用ステータス（期限超過は自動判定）
+  if (t.status === 'done') return 'done';
+  if (t.due && p(t.due) < TODAY) return 'overdue';
+  if (t.status === 'doing') return 'doing';
+  return 'todo';
+}
+const STATUS_LABEL = { todo:'未着手', doing:'進行中', done:'完了', overdue:'期限超過' };
+/* ---- 定期タスク ---- */
+const quarterMonths = a => { const b = ((+a || 1) - 1) % 3; return [b + 1, b + 4, b + 7, b + 10]; };
+function repeatLabel(t) {
+  if (t.repeat === 'weekly') return '毎週 ' + (t.repeatDays || []).map(d => WD[d]).join('・');
+  if (t.repeat === 'monthly') return '毎月 ' + (t.repeatDate || 1) + '日';
+  if (t.repeat === 'quarterly') return '四半期 ' + quarterMonths(t.repeatMonth).join('・') + '月の' + (t.repeatDate || 1) + '日';
+  if (t.repeat === 'yearly') return '毎年 ' + (t.repeatMonth || 1) + '月' + (t.repeatDate || 1) + '日';
+  if (t.repeat === 'dates') {
+    const ds = t.repeatDates || [];
+    if (!ds.length) return '指定日なし';
+    return '指定日 ' + ds.slice(0, 3).map(fmtMD).join('・') + (ds.length > 3 ? ` 他${ds.length - 3}件` : '');
+  }
+  return '';
+}
+function nextOccurrence(t, from) {
+  if (t.repeat === 'weekly' && (t.repeatDays || []).length) {
+    for (let i = 0; i < 7; i++) { const d = addD(from, i); if (t.repeatDays.includes(d.getDay())) return d; }
+  }
+  if (t.repeat === 'monthly') {
+    const dd = Math.min(Math.max(1, +t.repeatDate || 1), 31);
+    for (let i = 0; i < 2; i++) {
+      const last = new Date(from.getFullYear(), from.getMonth() + i + 1, 0).getDate();
+      const d = new Date(from.getFullYear(), from.getMonth() + i, Math.min(dd, last));
+      if (d >= from) return d;
+    }
+  }
+  if (t.repeat === 'quarterly') {
+    const dd = Math.min(Math.max(1, +t.repeatDate || 1), 31);
+    const anchor = ((+t.repeatMonth || 1) - 1) % 3;
+    for (let i = 0; i < 4; i++) {
+      const y = from.getFullYear(), mo = from.getMonth() + i;
+      if (((mo - anchor) % 3 + 3) % 3 !== 0) continue;
+      const last = new Date(y, mo + 1, 0).getDate();
+      const d = new Date(y, mo, Math.min(dd, last));
+      if (d >= from) return d;
+    }
+  }
+  if (t.repeat === 'yearly') {
+    const mo = Math.min(12, Math.max(1, +t.repeatMonth || 1)) - 1;
+    const dd = Math.min(Math.max(1, +t.repeatDate || 1), 31);
+    for (let i = 0; i < 2; i++) {
+      const y = from.getFullYear() + i;
+      const last = new Date(y, mo + 1, 0).getDate();
+      const d = new Date(y, mo, Math.min(dd, last));
+      if (d >= from) return d;
+    }
+  }
+  if (t.repeat === 'dates') {
+    for (const ds of [...(t.repeatDates || [])].sort()) {
+      const d = p(ds);
+      if (d >= from) return d;
+    }
+  }
+  return null;
+}
+function occurrencesInRange(t, start, days) {
+  const out = [], end = addD(start, days - 1);
+  if (t.repeat === 'weekly' && (t.repeatDays || []).length) {
+    for (let i = 0; i < days; i++) { const d = addD(start, i); if (t.repeatDays.includes(d.getDay())) out.push(d); }
+  } else if (t.repeat === 'monthly') {
+    const dd = Math.min(Math.max(1, +t.repeatDate || 1), 31);
+    let m = new Date(start.getFullYear(), start.getMonth(), 1);
+    while (m <= end) {
+      const last = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+      const d = new Date(m.getFullYear(), m.getMonth(), Math.min(dd, last));
+      if (d >= start && d <= end) out.push(d);
+      m = new Date(m.getFullYear(), m.getMonth() + 1, 1);
+    }
+  } else if (t.repeat === 'quarterly') {
+    const dd = Math.min(Math.max(1, +t.repeatDate || 1), 31);
+    const anchor = ((+t.repeatMonth || 1) - 1) % 3;
+    let m = new Date(start.getFullYear(), start.getMonth(), 1);
+    while (m <= end) {
+      if (((m.getMonth() - anchor) % 3 + 3) % 3 === 0) {
+        const last = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+        const d = new Date(m.getFullYear(), m.getMonth(), Math.min(dd, last));
+        if (d >= start && d <= end) out.push(d);
+      }
+      m = new Date(m.getFullYear(), m.getMonth() + 1, 1);
+    }
+  } else if (t.repeat === 'yearly') {
+    const mo = Math.min(12, Math.max(1, +t.repeatMonth || 1)) - 1;
+    const dd = Math.min(Math.max(1, +t.repeatDate || 1), 31);
+    for (let y = start.getFullYear(); y <= end.getFullYear(); y++) {
+      const last = new Date(y, mo + 1, 0).getDate();
+      const d = new Date(y, mo, Math.min(dd, last));
+      if (d >= start && d <= end) out.push(d);
+    }
+  } else if (t.repeat === 'dates') {
+    for (const ds of [...(t.repeatDates || [])].sort()) {
+      const d = p(ds);
+      if (d >= start && d <= end) out.push(d);
+    }
+  }
+  return out;
+}
+/* ---- 元に戻す（確認ダイアログの代わり） ---- */
+const undoStack = []; // 直近50アクションまで遡れる
+const UNDO_MAX = 50;
+let undoTimer = null;
+function updateUndoBtn() { $('btnUndoTop').disabled = undoStack.length === 0; }
+function beginChange() { // あらゆる変更の直前に呼ぶ
+  undoStack.push(JSON.stringify({ tasks, nextId, cats }));
+  if (undoStack.length > UNDO_MAX) undoStack.shift();
+  updateUndoBtn();
+}
+function pushUndo(msg, snap) { // beginChange＋トースト表示（変更前に呼ぶ）
+  undoStack.push(snap || JSON.stringify({ tasks, nextId, cats }));
+  if (undoStack.length > UNDO_MAX) undoStack.shift();
+  updateUndoBtn();
+  const tst = $('undoToast');
+  $('undoMsg').textContent = msg;
+  tst.classList.add('show');
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(() => tst.classList.remove('show'), 6000);
+}
+function doUndo() {
+  if (!undoStack.length) return;
+  const s = JSON.parse(undoStack.pop());
+  tasks = s.tasks;
+  nextId = s.nextId;
+  if (Array.isArray(s.cats)) cats = s.cats;
+  clearTimeout(undoTimer);
+  $('undoToast').classList.remove('show');
+  updateUndoBtn();
+  markDirty();
+  buildCatFilter();
+  renderAll();
+}
+
+function deleteTask(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  pushUndo(`「${t.name}」を削除しました`);
+  tasks = tasks.filter(x => x.id !== id);
+  markDirty();
+  renderAll();
+}
+function markDirty() {
+  lastModified = Date.now();
+  persist();
+  if (typeof scheduleAutoPush === 'function') scheduleAutoPush();
+  if (storageOK) return; // 自動保存できたら未保存マークは不要
+  dirty = true;
+  $('btnXlsx').classList.add('is-dirty');
+}
+
+/* ============ フィルタ ============ */
+function filteredTasks() {
+  const q = state.fSearch.trim().toLowerCase();
+  const catOrder = catList();
+  return tasks.filter(t => {
+    if (state.fCat && t.cat !== state.fCat) return false;
+    if (state.fStatus && dispStatus(t) !== state.fStatus) return false;
+    if (state.fToday && !t.today) return false;
+    if (q && !(t.name + ' ' + t.cat + ' ' + t.note).toLowerCase().includes(q)) return false;
+    return true;
+  }).sort((a, b) => {
+    if (state.sort === 'due') { // TODAYが最上位、次に期日順（定期は次回日、期日なしは最後）
+      if (a.today !== b.today) return a.today ? -1 : 1;
+      const key = t => t.due || (t.repeat ? f(nextOccurrence(t, TODAY) || addD(TODAY, 3650)) : '');
+      const ka = key(a), kb = key(b);
+      if (ka && kb) { if (ka !== kb) return ka < kb ? -1 : 1; }
+      else if (ka) return -1;
+      else if (kb) return 1;
+      const c = catOrder.indexOf(a.cat) - catOrder.indexOf(b.cat);
+      if (c !== 0) return c;
+      return a.id - b.id;
+    }
+    const c = catOrder.indexOf(a.cat) - catOrder.indexOf(b.cat);
+    if (c !== 0) return c;
+    const ad = a.start || a.due, bd = b.start || b.due;
+    if (ad && bd) return ad < bd ? -1 : ad > bd ? 1 : 0;
+    if (ad) return -1;
+    if (bd) return 1;
+    return a.id - b.id;
+  });
+}
+
+/* ============ 統計タイル ============ */
+function renderStats() {
+  const wrap = $('stats');
+  wrap.replaceChildren();
+  const total = tasks.length;
+  const doing = tasks.filter(t => dispStatus(t) === 'doing').length;
+  const over  = tasks.filter(t => dispStatus(t) === 'overdue').length;
+  const week  = tasks.filter(t => {
+    if (!t.due || dispStatus(t) === 'done') return false;
+    const d = p(t.due); return d >= TODAY && d <= addD(TODAY, 7);
+  }).length;
+  const doneN = tasks.filter(t => dispStatus(t) === 'done').length;
+  const tiles = [
+    ['総タスク', total, `完了 ${doneN}件`, ''],
+    ['進行中', doing, '', ''],
+    ['期限超過', over, over ? '要対応' : '', over ? 'alert' : ''],
+    ['7日以内の期日', week, '', ''],
+  ];
+  for (const [label, value, sub, cls] of tiles) {
+    const tile = el('div', 'tile' + (cls ? ' ' + cls : ''));
+    tile.append(el('div', 'label', label));
+    const v = el('div', 'value');
+    if (cls === 'alert' && value > 0) { const ico = el('span', 'ico', '⚠ '); v.append(ico); }
+    v.append(document.createTextNode(String(value)));
+    tile.append(v);
+    tile.append(el('div', 'sub', sub || ' '));
+    wrap.append(tile);
+  }
+}
+
+/* ============ ガント描画 ============ */
+function dateRange() {
+  let min = TODAY, max = TODAY;
+  for (const t of tasks) {
+    for (const s of [t.start, t.due, ...(t.repeatDates || [])]) {
+      if (!s) continue;
+      const d = p(s);
+      if (d < min) min = d;
+      if (d > max) max = d;
+    }
+  }
+  let start = addD(min, -7);
+  start = addD(start, -((start.getDay() + 6) % 7)); // 月曜へスナップ
+  let end = addD(max, 21);
+  // 年度末（4-3月決算 → 3/31）まで必ず表示、ただし来年度末より先は表示しない
+  const fyEnd = new Date(TODAY.getMonth() >= 3 ? TODAY.getFullYear() + 1 : TODAY.getFullYear(), 2, 31);
+  const nextFyEnd = new Date(fyEnd.getFullYear() + 1, 2, 31);
+  if (end < fyEnd) end = fyEnd;
+  if (end > nextFyEnd) end = nextFyEnd;
+  return { start, end, days: diffD(start, end) + 1 };
+}
+
+function renderGantt() {
+  const g = $('gantt');
+  g.replaceChildren();
+  const { start, days } = dateRange();
+  const pxd = PX[state.scale];
+  const W = days * pxd;
+  const list = filteredTasks();
+
+  // ---- ヘッダー行 ----
+  const head = el('div', 'g-row g-head');
+  const hLeft = el('div', 'g-left');
+  hLeft.append(el('span', 'left-head-label', `タスク（${list.length}件）`));
+  const hMemo = el('div', 'g-memo');
+  hMemo.append(el('span', 'left-head-label', '概要・メモ'));
+  const hProg = el('div', 'g-prog');
+  hProg.append(el('span', 'left-head-label', '進捗状況'));
+  const hTl = el('div', 'g-timeline');
+  hTl.style.width = W + 'px'; hTl.style.height = '48px';
+
+  // 月ラベル
+  let mcur = new Date(start.getFullYear(), start.getMonth(), 1);
+  while (mcur <= addD(start, days)) {
+    const x = Math.max(0, diffD(start, mcur) * pxd);
+    const cell = el('div', 'month-cell', `${mcur.getFullYear()}年${mcur.getMonth()+1}月`);
+    cell.style.left = x + 'px';
+    hTl.append(cell);
+    mcur = new Date(mcur.getFullYear(), mcur.getMonth()+1, 1);
+  }
+  // 単位セル（日／週／月）
+  if (state.scale === 'day') {
+    for (let i = 0; i < days; i++) {
+      const d = addD(start, i);
+      const c = el('div', 'unit-cell', `${d.getDate()} ${WD[d.getDay()]}`);
+      c.style.left = i*pxd + 'px'; c.style.width = pxd + 'px';
+      if (diffD(d, TODAY) === 0) c.classList.add('today-unit');
+      hTl.append(c);
+    }
+  } else if (state.scale === 'week') {
+    for (let i = 0; i < days; i += 7) {
+      const d = addD(start, i);
+      const c = el('div', 'unit-cell', `${d.getMonth()+1}/${d.getDate()}`);
+      c.style.left = i*pxd + 'px'; c.style.width = 7*pxd + 'px';
+      hTl.append(c);
+    }
+  } else {
+    mcur = new Date(start.getFullYear(), start.getMonth(), 1);
+    while (mcur <= addD(start, days)) {
+      const nm = new Date(mcur.getFullYear(), mcur.getMonth()+1, 1);
+      const x = Math.max(0, diffD(start, mcur) * pxd);
+      const w = Math.min(days*pxd, diffD(start, nm)*pxd) - x;
+      const c = el('div', 'unit-cell', `${mcur.getMonth()+1}月`);
+      c.style.left = x + 'px'; c.style.width = w + 'px';
+      hTl.append(c);
+      mcur = nm;
+    }
+  }
+  // 今日ラベル
+  const todayX = (diffD(start, TODAY) + .5) * pxd;
+  const tl = el('div', 'today-label', '今日');
+  tl.style.left = todayX + 'px';
+  hTl.append(tl);
+  head.append(hLeft, hMemo, hProg, hTl);
+  g.append(head);
+
+  // ---- 背景列生成関数 ----
+  function bgCols(container) {
+    if (state.scale !== 'month') {
+      for (let i = 0; i < days; i++) {
+        const d = addD(start, i);
+        if (d.getDay() === 0 || d.getDay() === 6) {
+          const we = el('div', 'col-weekend');
+          we.style.left = i*pxd + 'px'; we.style.width = pxd + 'px';
+          container.append(we);
+        }
+      }
+    }
+    const step = state.scale === 'day' ? 1 : 7;
+    if (state.scale === 'month') {
+      let mc = new Date(start.getFullYear(), start.getMonth(), 1);
+      while (mc <= addD(start, days)) {
+        const x = diffD(start, mc) * pxd;
+        if (x > 0) { const l = el('div', 'col-line'); l.style.left = x + 'px'; container.append(l); }
+        mc = new Date(mc.getFullYear(), mc.getMonth()+1, 1);
+      }
+    } else {
+      for (let i = step; i < days; i += step) {
+        const l = el('div', 'col-line'); l.style.left = i*pxd + 'px'; container.append(l);
+      }
+    }
+    const today = el('div', 'today-line');
+    today.style.left = todayX - 1 + 'px';
+    container.append(today);
+  }
+
+  // ---- タスク行 ----
+  for (const t of list) {
+    const row = el('div', 'g-row');
+    const left = el('div', 'g-left');
+    const nm = el('div', 'task-name', t.name);
+    nm.title = t.name;
+    const meta = el('div', 'task-meta');
+    const chip = el('span', 'cat-chip');
+    const sw = el('span', 'sw'); sw.style.background = catColor(t.cat);
+    chip.append(sw, document.createTextNode(t.cat));
+    meta.append(chip);
+    const ds = dispStatus(t);
+    if (t.repeat) {
+      const nx = nextOccurrence(t, TODAY);
+      meta.append(el('span', 'badge', `↻ ${repeatLabel(t)}` + (nx ? `（次回 ${nx.getMonth()+1}/${nx.getDate()}）` : '')));
+      if (ds === 'done') meta.append(el('span', 'badge done', '✓ 完了'));
+    } else if (ds === 'overdue') meta.append(el('span', 'badge overdue', `⚠ 期限超過 (${fmtMD(t.due)})`));
+    else if (ds === 'done') meta.append(el('span', 'badge done', '✓ 完了'));
+    else if (t.due) meta.append(el('span', 'badge', `期日 ${fmtMD(t.due)}`));
+    left.append(nm, meta);
+    left.style.cursor = 'pointer';
+    left.addEventListener('click', () => openEditor(t.id));
+    const tgl = el('button', 'today-toggle', 'TODAY');
+    tgl.type = 'button';
+    tgl.setAttribute('aria-pressed', String(!!t.today));
+    tgl.title = t.today ? 'TODAYを解除' : 'TODAYに設定';
+    tgl.addEventListener('click', ev => {
+      ev.stopPropagation();
+      beginChange();
+      t.today = !t.today;
+      markDirty();
+      renderAll();
+    });
+    left.append(tgl);
+    const db = el('button', 'del-btn', '✕');
+    db.type = 'button';
+    db.title = 'タスクを削除';
+    db.setAttribute('aria-label', `「${t.name}」を削除`);
+    db.addEventListener('click', ev => { ev.stopPropagation(); deleteTask(t.id); });
+    left.append(db);
+
+    const tlc = el('div', 'g-timeline');
+    tlc.style.width = W + 'px'; tlc.style.minHeight = ROW_H + 'px';
+    bgCols(tlc);
+
+    const color = catColor(t.cat);
+    row.style.setProperty('--row-tint', color);
+    if (t.repeat) {
+      let minGap = 28; // 毎月
+      if (t.repeat === 'quarterly') minGap = 89;
+      if (t.repeat === 'yearly') minGap = 365;
+      if (t.repeat === 'dates') {
+        const ds = [...(t.repeatDates || [])].sort();
+        minGap = 28;
+        for (let i = 1; i < ds.length; i++) minGap = Math.min(minGap, Math.max(1, diffD(p(ds[i - 1]), p(ds[i]))));
+      }
+      if (t.repeat === 'weekly') {
+        const ws2 = [...new Set(t.repeatDays || [])].sort((a, b) => a - b);
+        minGap = ws2.length > 1
+          ? Math.min(...ws2.map((d, i) => ((ws2[(i + 1) % ws2.length] - d + 7) % 7) || 7))
+          : 7;
+      }
+      const showDates = minGap * pxd >= 34; // ラベル同士が重なる場合は非表示
+      for (const d of occurrencesInRange(t, start, days)) {
+        const ox = (diffD(start, d) + .5) * pxd;
+        const oc = el('div', 'occ');
+        oc.style.left = ox + 'px';
+        oc.style.setProperty('--c', color);
+        attachTip(oc, t);
+        tlc.append(oc);
+        if (showDates) {
+          const lb = el('div', 'bar-label occ-label', `${d.getMonth() + 1}/${d.getDate()}`);
+          lb.style.left = ox + 9 + 'px';
+          tlc.append(lb);
+        }
+      }
+    } else if (t.start && t.due && diffD(start, p(t.start)) * pxd < W) {
+      const x = diffD(start, p(t.start)) * pxd;
+      const w = Math.min(Math.max(pxd, (diffD(p(t.start), p(t.due)) + 1) * pxd - 2), W - x - 2); // 表示範囲でクリップ
+      const bar = el('div', 'bar');
+      bar.style.left = x + 'px'; bar.style.width = w + 'px';
+      bar.style.setProperty('--c', color);
+      if (ds === 'done') bar.classList.add('done-bar');
+      bar.append(el('div', 'base'), el('div', 'handle l'), el('div', 'handle r'));
+      attachBarEvents(bar, t, { pxd, kind:'bar' });
+      tlc.append(bar);
+    } else if (t.due && (diffD(start, p(t.due)) + .5) * pxd < W) {
+      const x = (diffD(start, p(t.due)) + .5) * pxd;
+      const ms = el('div', 'milestone' + (ds === 'done' ? ' done-ms' : ''));
+      ms.style.left = x + 'px';
+      ms.style.setProperty('--c', ds === 'overdue' ? 'var(--status-critical)' : color);
+      attachBarEvents(ms, t, { pxd, kind:'milestone' });
+      tlc.append(ms);
+      const lb = el('div', 'bar-label');
+      lb.style.left = x + 12 + 'px';
+      lb.append(el('span', '', fmtMD(t.due)));
+      tlc.append(lb);
+    } else {
+      const hint = el('span', 'nodate-hint', '＋ クリックして日付を設定');
+      hint.addEventListener('click', () => openEditor(t.id));
+      tlc.append(hint);
+    }
+    attachTip(t.start && t.due ? tlc.querySelector('.bar') : tlc.querySelector('.milestone'), t);
+    const memo = el('div', 'g-memo');
+    renderLinkedText(memo, t.note);
+    memo.style.cursor = 'pointer';
+    memo.addEventListener('click', () => openEditor(t.id));
+    const prog = el('div', 'g-prog');
+    renderLinkedText(prog, t.progNote);
+    prog.style.cursor = 'pointer';
+    prog.addEventListener('click', () => openEditor(t.id));
+    row.append(left, memo, prog, tlc);
+    g.append(row);
+  }
+
+  if (list.length === 0) {
+    const row = el('div', 'g-row');
+    const left = el('div', 'g-left');
+    left.append(el('div', 'task-meta', tasks.length ? '該当するタスクがありません' : '「☁ 同期」でデータを読み込むか、「読込」でExcel/JSONを取り込んでください'));
+    const tlc = el('div', 'g-timeline');
+    tlc.style.width = W + 'px'; tlc.style.height = ROW_H + 'px';
+    row.append(left, el('div', 'g-memo'), el('div', 'g-prog'), tlc);
+    g.append(row);
+  }
+}
+
+/* ============ ツールチップ ============ */
+function attachTip(elm, t) {
+  if (!elm) return;
+  const tip = $('tip');
+  function show(ev) {
+    tip.replaceChildren();
+    const title = el('div', 't-title');
+    const sw = el('span', 'sw'); sw.style.background = catColor(t.cat);
+    title.append(sw, document.createTextNode(t.name));
+    tip.append(title);
+    const rows = [
+      ['分類', t.cat],
+      ['期間', t.repeat ? repeatLabel(t) + (nextOccurrence(t, TODAY) ? `（次回 ${fmtMD(f(nextOccurrence(t, TODAY)))}）` : '') : t.start && t.due ? `${fmtMD(t.start)} 〜 ${fmtMD(t.due)}` : t.due ? `期日 ${fmtMD(t.due)}` : '未設定'],
+      ['状態', STATUS_LABEL[dispStatus(t)]],
+    ];
+    if (t.progNote) rows.push(['進捗', t.progNote]);
+    for (const [k, v] of rows) {
+      const r = el('div', 't-row');
+      r.append(el('span', 'k', k), el('span', 'v', v));
+      tip.append(r);
+    }
+    if (t.note) tip.append(el('div', 't-note', t.note));
+    tip.style.display = 'block';
+    move(ev);
+  }
+  function move(ev) {
+    const pad = 14;
+    let x = ev.clientX + pad, y = ev.clientY + pad;
+    const r = tip.getBoundingClientRect();
+    if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - pad;
+    if (y + r.height > innerHeight - 8) y = ev.clientY - r.height - pad;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  }
+  elm.addEventListener('pointerenter', show);
+  elm.addEventListener('pointermove', move);
+  elm.addEventListener('pointerleave', () => tip.style.display = 'none');
+}
+
+/* ============ ドラッグ（移動・伸縮） ============ */
+function attachBarEvents(bar, t, { pxd, kind }) {
+  let drag = null;
+  bar.addEventListener('pointerdown', ev => {
+    if (ev.button !== 0) return;
+    const mode = ev.target.classList.contains('handle')
+      ? (ev.target.classList.contains('l') ? 'l' : 'r') : 'move';
+    drag = { x0: ev.clientX, mode, start: t.start, due: t.due, moved: false,
+             left0: parseFloat(bar.style.left), w0: parseFloat(bar.style.width) || 0 };
+    bar.setPointerCapture(ev.pointerId);
+    bar.classList.add('dragging');
+    $('tip').style.display = 'none';
+    ev.preventDefault();
+  });
+  bar.addEventListener('pointermove', ev => {
+    if (!drag) return;
+    const dd = Math.round((ev.clientX - drag.x0) / pxd);
+    if (dd !== 0) drag.moved = true;
+    if (kind === 'milestone') {
+      bar.style.left = drag.left0 + dd * pxd + 'px';
+      drag.newDue = f(addD(p(drag.due), dd));
+      return;
+    }
+    if (drag.mode === 'move') {
+      bar.style.left = drag.left0 + dd * pxd + 'px';
+      drag.newStart = f(addD(p(drag.start), dd));
+      drag.newDue = f(addD(p(drag.due), dd));
+    } else if (drag.mode === 'r') {
+      const days = Math.max(0, diffD(p(drag.start), p(drag.due)) + dd);
+      bar.style.width = Math.max(pxd, (days + 1) * pxd - 2) + 'px';
+      drag.newDue = f(addD(p(drag.start), days));
+    } else {
+      const days = Math.max(0, diffD(p(drag.start), p(drag.due)) - dd);
+      const ns = addD(p(drag.due), -days);
+      bar.style.left = drag.left0 + (diffD(p(drag.start), ns)) * pxd + 'px';
+      bar.style.width = Math.max(pxd, (days + 1) * pxd - 2) + 'px';
+      drag.newStart = f(ns);
+    }
+  });
+  bar.addEventListener('pointerup', () => {
+    if (!drag) return;
+    bar.classList.remove('dragging');
+    const wasMoved = drag.moved;
+    if (wasMoved) {
+      beginChange();
+      if (drag.newStart) t.start = drag.newStart;
+      if (drag.newDue) t.due = drag.newDue;
+      markDirty();
+      renderAll();
+    } else {
+      openEditor(t.id); // クリック＝編集
+    }
+    drag = null;
+  });
+  bar.addEventListener('pointercancel', () => { drag = null; bar.classList.remove('dragging'); renderAll(); });
+}
+
+/* ============ テーブル表示 ============ */
+function renderTable() {
+  const wrap = $('tableWrap');
+  wrap.replaceChildren();
+  const table = el('table', 'list');
+  const thead = el('thead');
+  const hr = el('tr');
+  for (const h of ['Today', 'タスク', '分類', '概要', '開始', '期日', '進捗状況', '状態', '']) hr.append(el('th', '', h));
+  thead.append(hr);
+  table.append(thead);
+  const tbody = el('tbody');
+  for (const t of filteredTasks()) {
+    const tr = el('tr');
+    tr.style.setProperty('--row-tint', catColor(t.cat));
+    tr.append(el('td', '', t.today ? '〇' : ''));
+    const nameTd = el('td');
+    const nchip = el('span', 'cat-chip');
+    const sw = el('span', 'sw'); sw.style.background = catColor(t.cat);
+    nchip.append(sw);
+    const strong = el('strong', '', t.name);
+    nameTd.append(nchip, document.createTextNode(' '), strong);
+    tr.append(nameTd);
+    tr.append(el('td', '', t.cat));
+    const noteTd = el('td', 'note-cell');
+    renderLinkedText(noteTd, t.note);
+    tr.append(noteTd);
+    tr.append(el('td', 'num', t.start ? fmtMD(t.start) : '—'));
+    const dueTd = el('td', 'num', t.repeat ? '↻ ' + repeatLabel(t) : t.due ? fmtMD(t.due) : '—');
+    if (dispStatus(t) === 'overdue') { dueTd.style.color = 'var(--status-critical)'; dueTd.style.fontWeight = '700'; }
+    tr.append(dueTd);
+    const pnTd = el('td', 'note-cell');
+    renderLinkedText(pnTd, t.progNote);
+    tr.append(pnTd);
+    const ds = dispStatus(t);
+    const stTd = el('td');
+    const badge = el('span', 'badge' + (ds === 'overdue' ? ' overdue' : ds === 'done' ? ' done' : ''),
+      (ds === 'overdue' ? '⚠ ' : ds === 'done' ? '✓ ' : '') + STATUS_LABEL[ds]);
+    stTd.append(badge);
+    tr.append(stTd);
+    const opTd = el('td');
+    opTd.style.whiteSpace = 'nowrap';
+    const eb = el('button', 'mini-btn', '編集');
+    eb.addEventListener('click', () => openEditor(t.id));
+    const delB = el('button', 'mini-btn', '削除');
+    delB.style.marginLeft = '6px';
+    delB.addEventListener('click', () => deleteTask(t.id));
+    opTd.append(eb, delB);
+    tr.append(opTd);
+    tbody.append(tr);
+  }
+  table.append(tbody);
+  wrap.append(table);
+}
+
+/* ============ 編集モーダル ============ */
+let editingId = null;
+function fillCatSelect(sel, current) {
+  sel.replaceChildren();
+  for (const c of catList()) {
+    const o = el('option', '', c);
+    o.value = c;
+    if (c === current) o.selected = true;
+    sel.append(o);
+  }
+}
+function openEditor(id) {
+  editingId = id;
+  const t = id === null ? { name:'', cat: catList()[0] || 'ADMI', note:'', progNote:'', start:'', due:'', status:'todo', today:false, repeat:'' } : tasks.find(x => x.id === id);
+  $('dlgTitle').textContent = id === null ? '新規タスク' : 'タスクを編集';
+  $('eName').value = t.name;
+  fillCatSelect($('eCat'), t.cat);
+  $('eCatNew').value = '';
+  $('eNote').value = t.note;
+  $('eProgNote').value = t.progNote || '';
+  $('eStart').value = t.start;
+  $('eDue').value = t.due;
+  $('eRepeat').value = t.repeat || '';
+  for (const c of $('wdPicks').querySelectorAll('input')) c.checked = (t.repeatDays || []).includes(+c.value);
+  $('eMDay').value = t.repeatDate || 1;
+  $('eQMonth').value = String(t.repeatMonth || (TODAY.getMonth() + 1));
+  $('eQDay').value = t.repeatDate || 1;
+  $('eYMonth').value = String(t.repeatMonth || (TODAY.getMonth() + 1));
+  $('eYDay').value = t.repeatDate || 1;
+  editDates = [...(t.repeatDates || [])];
+  renderDateChips();
+  $('eDateAdd').value = '';
+  syncRepeatUI();
+  $('eStatus').value = t.status;
+  $('eToday').checked = t.today;
+  $('btnDelete').style.visibility = id === null ? 'hidden' : 'visible';
+  $('editDlg').showModal();
+}
+let editDates = [];
+function renderDateChips() {
+  const box = $('dateChips');
+  box.replaceChildren();
+  editDates.sort();
+  for (const ds of editDates) {
+    const chip = el('span', 'date-chip');
+    const d = p(ds);
+    chip.append(document.createTextNode(`${d.getMonth() + 1}/${d.getDate()}（${WD[d.getDay()]}）`));
+    const x = el('button', '', '✕');
+    x.type = 'button';
+    x.title = 'この日付を削除';
+    x.addEventListener('click', () => { editDates = editDates.filter(v => v !== ds); renderDateChips(); });
+    chip.append(x);
+    box.append(chip);
+  }
+  if (!editDates.length) box.append(el('span', 'date-chip', 'まだ日付がありません'));
+}
+function syncRepeatUI() {
+  const r = $('eRepeat').value;
+  $('wdRow').classList.toggle('hidden', r !== 'weekly');
+  $('mdRow').classList.toggle('hidden', r !== 'monthly');
+  $('qRow').classList.toggle('hidden', r !== 'quarterly');
+  $('yRow').classList.toggle('hidden', r !== 'yearly');
+  $('mdatesRow').classList.toggle('hidden', r !== 'dates');
+  $('dateRow').classList.toggle('hidden', !!r);
+}
+function saveEditor() {
+  const name = $('eName').value.trim();
+  if (!name) return;
+  const cat = $('eCatNew').value.trim() || $('eCat').value;
+  let start = $('eStart').value, due = $('eDue').value;
+  if (start && due && p(start) > p(due)) [start, due] = [due, start];
+  const repeat = $('eRepeat').value;
+  let repeatDays = [...$('wdPicks').querySelectorAll('input:checked')].map(c => +c.value);
+  if (repeat === 'weekly' && !repeatDays.length) repeatDays = [1];
+  if (repeat) { start = ''; due = ''; } // 定期タスクは日付欄を使わない
+  const data = {
+    name, cat, note: $('eNote').value, progNote: $('eProgNote').value.trim(), start, due,
+    status: $('eStatus').value, today: $('eToday').checked,
+    repeat, repeatDays,
+    repeatDate: Math.min(31, Math.max(1, +(repeat === 'quarterly' ? $('eQDay').value : repeat === 'yearly' ? $('eYDay').value : $('eMDay').value) || 1)),
+    repeatMonth: Math.min(12, Math.max(1, +(repeat === 'yearly' ? $('eYMonth').value : $('eQMonth').value) || 1)),
+    repeatDates: [...editDates].sort(),
+  };
+  beginChange();
+  ensureCat(cat);
+  if (editingId === null) {
+    tasks.push({ id: nextId++, ...data });
+  } else {
+    Object.assign(tasks.find(x => x.id === editingId), data);
+  }
+  markDirty();
+  $('editDlg').close();
+  renderAll();
+}
+
+/* ============ 入出力 ============ */
+function xlsxReady() {
+  if (typeof XLSX === 'undefined') {
+    alert('Excelライブラリを読み込めませんでした（ネットワーク接続をご確認ください）。JSON保存は利用できます。');
+    return false;
+  }
+  return true;
+}
+function exportXlsx() {
+  if (!xlsxReady()) return;
+  const rows = tasks.map(t => ({
+    'Today': t.today ? '〇' : '', 'タスク': t.name, '分類': t.cat, '概要': t.note,
+    '開始': t.start, '期日': t.due,
+    '定期': t.repeat === 'dates' ? '指定日: ' + (t.repeatDates || []).join('; ') : repeatLabel(t),
+    '進捗状況': t.progNote || '', 'ステータス': STATUS_LABEL[dispStatus(t)],
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{wch:6},{wch:32},{wch:14},{wch:44},{wch:11},{wch:11},{wch:14},{wch:24},{wch:9}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'To Do');
+  const wsCat = XLSX.utils.json_to_sheet(catList().map(n => ({ '分類': n })));
+  wsCat['!cols'] = [{ wch: 20 }];
+  XLSX.utils.book_append_sheet(wb, wsCat, '分類リスト');
+  XLSX.writeFile(wb, `ToDo_${f(TODAY)}.xlsx`);
+  dirty = false;
+  $('btnXlsx').classList.remove('is-dirty');
+}
+function exportJson() {
+  const blob = new Blob([JSON.stringify({ version: 2, tasks, cats }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ToDo_${f(TODAY)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  dirty = false;
+  $('btnXlsx').classList.remove('is-dirty');
+}
+function importFile(file) {
+  const isJson = /\.json$/i.test(file.name);
+  if (!isJson && !xlsxReady()) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const prev = JSON.stringify({ tasks, nextId, cats });
+    try {
+      if (isJson) {
+        const obj = JSON.parse(e.target.result);
+        if (!Array.isArray(obj.tasks)) throw new Error('形式が不正です');
+        tasks = obj.tasks.map((t, i) => ({
+          id: i + 1, name: String(t.name || ''), cat: String(t.cat || 'その他'),
+          note: String(t.note || ''), progNote: String(t.progNote || ''), start: t.start || '', due: t.due || '',
+          status: ['todo','doing','done'].includes(t.status) ? t.status : 'todo',
+          today: !!t.today,
+          repeat: ['weekly','monthly','quarterly','yearly','dates'].includes(t.repeat) ? t.repeat : '',
+          repeatDays: Array.isArray(t.repeatDays) ? t.repeatDays.map(Number).filter(n => n >= 0 && n <= 6) : [],
+          repeatDate: Math.min(31, Math.max(1, +t.repeatDate || 1)),
+          repeatMonth: Math.min(12, Math.max(1, +t.repeatMonth || 1)),
+          repeatDates: Array.isArray(t.repeatDates) ? t.repeatDates.filter(v => /^\d{4}-\d{2}-\d{2}$/.test(String(v))).sort() : [],
+        }));
+        if (Array.isArray(obj.cats) && obj.cats.length) {
+          cats = [];
+          for (const c of obj.cats) ensureCat(c && c.name);
+        }
+        for (const t of tasks) ensureCat(t.cat);
+      } else {
+        const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames.includes('To Do') ? 'To Do' : wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        const dstr = v => v instanceof Date ? f(v) : (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0,10) : '');
+        tasks = rows.filter(r => r['タスク']).map((r, i) => ({
+          id: i + 1, name: String(r['タスク']), cat: String(r['分類'] || 'その他'),
+          note: String(r['概要'] || ''), progNote: String(r['進捗状況'] || ''), start: dstr(r['開始']), due: dstr(r['期日']),
+          status: String(r['ステータス']).includes('完了') ? 'done' : String(r['ステータス']).includes('進行') ? 'doing' : 'todo',
+          today: String(r['Today']).trim() !== '',
+          ...(v => {
+            const m = String(v || '');
+            if (m.includes('毎週')) return { repeat:'weekly', repeatDays: [...'日月火水木金土'].map((w, i) => m.includes(w) ? i : -1).filter(i => i >= 0), repeatDate: 1, repeatDates: [] };
+            const md = m.match(/毎月\s*(\d+)/);
+            if (md) return { repeat:'monthly', repeatDays: [], repeatDate: Math.min(31, Math.max(1, +md[1])), repeatDates: [] };
+            const qd = m.match(/四半期\s*(\d+)[^0-9]*の\s*(\d+)日/);
+            if (qd) return { repeat:'quarterly', repeatDays: [], repeatMonth: Math.min(12, Math.max(1, +qd[1])), repeatDate: Math.min(31, Math.max(1, +qd[2])), repeatDates: [] };
+            const yd = m.match(/毎年\s*(\d+)月\s*(\d+)日/);
+            if (yd) return { repeat:'yearly', repeatDays: [], repeatMonth: Math.min(12, Math.max(1, +yd[1])), repeatDate: Math.min(31, Math.max(1, +yd[2])), repeatDates: [] };
+            if (m.includes('指定日')) return { repeat:'dates', repeatDays: [], repeatDate: 1, repeatDates: (m.match(/\d{4}-\d{2}-\d{2}/g) || []).sort() };
+            return { repeat:'', repeatDays: [], repeatDate: 1, repeatDates: [] };
+          })(r['定期']),
+        }));
+        const catWs = wb.Sheets['分類リスト'];
+        if (catWs) {
+          cats = [];
+          for (const r of XLSX.utils.sheet_to_json(catWs, { defval: '' })) ensureCat(r['分類']);
+        }
+        for (const t of tasks) ensureCat(t.cat);
+      }
+      nextId = tasks.length + 1;
+      dirty = false;
+      $('btnXlsx').classList.remove('is-dirty');
+      persist();
+      buildCatFilter();
+      renderAll();
+      pushUndo('ファイルを読み込みました', prev);
+    } catch (err) {
+      alert('読み込みに失敗しました: ' + err.message);
+    }
+  };
+  if (isJson) reader.readAsText(file); else reader.readAsArrayBuffer(file);
+}
+
+/* ============ クラウド同期（GitHub Gist） ============ */
+const SYNC_KEY = 'gantt_sync_v1';
+const SYNC_FILE = 'gantt_todo_sync.json';
+let sync = { token: '', gistId: '' };
+try { const raw = storageOK && localStorage.getItem(SYNC_KEY); if (raw) sync = { ...sync, ...JSON.parse(raw) }; } catch (e) {}
+let lastModified = 0;
+let syncTimer = null, syncBusy = false;
+const syncConfigured = () => !!sync.token;
+function saveSyncCfg() { try { localStorage.setItem(SYNC_KEY, JSON.stringify(sync)); } catch (e) {} }
+function setSyncStatus(msg, ok) {
+  const n = $('saveNote');
+  n.textContent = msg;
+  n.style.color = ok ? '' : 'var(--status-critical)';
+  n.classList.add('show');
+  clearTimeout(setSyncStatus._t);
+  setSyncStatus._t = setTimeout(() => { n.classList.remove('show'); n.style.color = ''; }, 4000);
+  if ($('syncDlg').open) $('syncInfo').textContent = msg;
+  $('btnSync').classList.toggle('synced', syncConfigured() && ok !== false);
+}
+async function gh(path, opts = {}) {
+  const res = await fetch('https://api.github.com' + path, {
+    ...opts,
+    cache: 'no-store',
+    keepalive: !!opts.body,
+    headers: {
+      'Accept': 'application/vnd.github+json',
+      'Authorization': 'Bearer ' + sync.token,
+      ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
+    },
+  });
+  if (!res.ok) throw new Error('GitHub API ' + res.status + (res.status === 401 ? '（トークンが無効か権限不足です）' : ''));
+  return res.json();
+}
+const cloudPayload = () => JSON.stringify({ v: 2, updatedAt: lastModified || Date.now(), tasks, cats, nextId }, null, 1);
+async function findOrCreateGist() {
+  if (sync.gistId) return sync.gistId;
+  const list = await gh('/gists?per_page=100');
+  const hits = list.filter(g => g.files && g.files[SYNC_FILE]);
+  if (hits.length) {
+    hits.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)); // 重複時は最新を採用
+    sync.gistId = hits[0].id;
+    saveSyncCfg();
+    return sync.gistId;
+  }
+  const created = await gh('/gists', {
+    method: 'POST',
+    body: JSON.stringify({ description: 'タスクスケジュール管理 同期データ', public: false, files: { [SYNC_FILE]: { content: cloudPayload() } } }),
+  });
+  sync.gistId = created.id;
+  saveSyncCfg();
+  return created.id;
+}
+async function pushCloud(manual) {
+  if (!syncConfigured() || syncBusy) return;
+  syncBusy = true;
+  try {
+    const id = await findOrCreateGist();
+    await gh('/gists/' + id, { method: 'PATCH', body: JSON.stringify({ files: { [SYNC_FILE]: { content: cloudPayload() } } }) });
+    setSyncStatus('☁ クラウドに保存しました', true);
+  } catch (e) {
+    setSyncStatus('☁ 同期エラー: ' + e.message, false);
+  }
+  syncBusy = false;
+}
+async function pullCloud() {
+  const id = await findOrCreateGist();
+  const g = await gh('/gists/' + id);
+  lastSyncAt = Date.now();
+  const file = g.files[SYNC_FILE];
+  if (!file) return null;
+  let content = file.content;
+  if (file.truncated) content = await (await fetch(file.raw_url)).text();
+  return JSON.parse(content);
+}
+function applyCloud(obj, withUndo) {
+  if (!obj || !Array.isArray(obj.tasks) || !obj.tasks.length) return false;
+  if (withUndo) pushUndo('クラウドのデータを読み込みました');
+  tasks = obj.tasks;
+  nextId = +obj.nextId || Math.max(0, ...tasks.map(t => +t.id || 0)) + 1;
+  if (Array.isArray(obj.cats) && obj.cats.length) { cats = []; for (const c of obj.cats) ensureCat(c && c.name); }
+  for (const t of tasks) ensureCat(t.cat);
+  lastModified = +obj.updatedAt || Date.now();
+  persist();
+  buildCatFilter();
+  renderAll();
+  return true;
+}
+function scheduleAutoPush() {
+  if (!syncConfigured()) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => { syncTimer = null; pushCloud(false); }, 4000);
+}
+let lastSyncAt = 0;
+async function pollCloud() {
+  if (!syncConfigured() || syncBusy || syncTimer || document.hidden) return;
+  if ($('editDlg').open || $('syncDlg').open || $('catDlg').open) return; // 操作中は反映しない
+  try {
+    const remote = await pullCloud();
+    lastSyncAt = Date.now();
+    if (remote && (+remote.updatedAt || 0) > lastModified) {
+      applyCloud(remote, false);
+      setSyncStatus('☁ 他の端末の更新を反映しました', true);
+    }
+  } catch (e) { /* ポーリング失敗は静かに次回へ */ }
+}
+async function initialSync() {
+  if (!syncConfigured()) return;
+  try {
+    setSyncStatus('☁ 同期を確認中…', true);
+    const remote = await pullCloud();
+    const remoteAt = remote ? (+remote.updatedAt || 0) : 0;
+    if (remote && remoteAt > lastModified) {
+      applyCloud(remote, false);
+      setSyncStatus('☁ クラウドの最新データを読み込みました', true);
+    } else if (lastModified > remoteAt) {
+      await pushCloud(false);
+    } else {
+      setSyncStatus('☁ 同期済みです', true);
+    }
+  } catch (e) {
+    setSyncStatus('☁ 同期エラー: ' + e.message, false);
+  }
+}
+
+/* ============ 分類管理 ============ */
+function renderCatMgr() {
+  const body = $('catListBody');
+  body.replaceChildren();
+  for (const name of catList()) {
+    const c = cats.find(x => x.name === name);
+    const used = tasks.filter(t => t.cat === name).length;
+    const row = el('div', 'cat-row');
+    const sw = el('span', 'sw');
+    sw.style.background = isDark() ? c.color[1] : c.color[0];
+    const inp = el('input');
+    inp.type = 'text';
+    inp.value = name;
+    inp.addEventListener('change', () => {
+      const nv = inp.value.trim();
+      if (!nv || nv === c.name) { inp.value = c.name; return; }
+      if (cats.some(x => x !== c && x.name === nv)) { inp.value = c.name; return; } // 重複は無視
+      beginChange();
+      const old = c.name;
+      c.name = nv;
+      for (const t of tasks) if (t.cat === old) t.cat = nv;
+      markDirty();
+      buildCatFilter();
+      renderAll();
+      renderCatMgr();
+    });
+    const use = el('span', 'use', used ? `${used}件` : '未使用');
+    const del = el('button', 'mini-btn', '削除');
+    del.disabled = used > 0;
+    del.title = used > 0 ? 'タスクで使用中のため削除できません' : 'この分類を削除';
+    del.addEventListener('click', () => {
+      if (used > 0) return;
+      pushUndo(`分類「${c.name}」を削除しました`);
+      cats = cats.filter(x => x !== c);
+      markDirty();
+      buildCatFilter();
+      renderAll();
+      renderCatMgr();
+    });
+    row.append(sw, inp, use, del);
+    body.append(row);
+  }
+}
+function addCategory() {
+  const name = $('newCatName').value.trim();
+  if (!name || cats.some(c => c.name === name)) return;
+  beginChange();
+  ensureCat(name);
+  $('newCatName').value = '';
+  markDirty();
+  buildCatFilter();
+  renderAll();
+  renderCatMgr();
+}
+
+/* ============ 描画まとめ・イベント ============ */
+function buildCatFilter() {
+  const sel = $('fCat');
+  sel.replaceChildren();
+  const all = el('option', '', '分類: すべて'); all.value = '';
+  sel.append(all);
+  for (const c of catList()) { const o = el('option', '', c); o.value = c; sel.append(o); }
+  sel.value = catList().includes(state.fCat) ? state.fCat : '';
+}
+function renderAll() {
+  renderStats();
+  if (state.view === 'gantt') renderGantt(); else renderTable();
+}
+function scrollToToday() {
+  const sc = $('ganttScroll');
+  const { start } = dateRange();
+  const x = diffD(start, TODAY) * PX[state.scale];
+  sc.scrollLeft = Math.max(0, x - (sc.clientWidth - 580) * 0.35);
+}
+
+function init() {
+  const d = TODAY;
+  $('todayNote').textContent = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日（${WD[d.getDay()]}）`;
+  if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.dataset.theme = 'dark';
+
+  loadPersisted();
+  $('footNote').title = ''; // 下でtextContentと同じ全文を入れる（省略表示対策）
+  $('footNote').textContent = storageOK
+    ? '※ 編集内容はこのブラウザに自動保存され、次回開いたときに復元されます（同じブラウザ・同じ場所で開いた場合）。バックアップや共有には「Excel出力」「JSON保存」をご利用ください。バーはドラッグで移動、両端をつまむと期間変更できます。'
+    : '※ この環境ではブラウザ保存が利用できないため、変更はページを開いている間のみ保持されます。編集後は「Excel出力」または「JSON保存」でダウンロードしてください（JSONは「読込」でそのまま復元できます）。バーはドラッグで移動、両端をつまむと期間変更できます。';
+  $('footNote').title = $('footNote').textContent;
+
+  buildCatFilter();
+  renderAll();
+  scrollToToday();
+
+  $('btnAdd').addEventListener('click', () => openEditor(null));
+  $('btnXlsx').addEventListener('click', exportXlsx);
+  $('btnJson').addEventListener('click', exportJson);
+  $('btnImport').addEventListener('click', () => $('fileInput').click());
+  $('btnReset').addEventListener('click', () => {
+    pushUndo('初期データに戻しました');
+    tasks = JSON.parse(JSON.stringify(INITIAL));
+    cats = JSON.parse(JSON.stringify(INITIAL_CATS));
+    nextId = Math.max(...tasks.map(t => t.id)) + 1;
+    if (storageOK) { try { localStorage.removeItem(STORE_KEY); } catch (e) {} }
+    dirty = false;
+    $('btnXlsx').classList.remove('is-dirty');
+    buildCatFilter();
+    renderAll();
+  });
+  $('fileInput').addEventListener('change', e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ''; });
+  $('btnTheme').addEventListener('click', () => {
+    document.documentElement.dataset.theme = isDark() ? 'light' : 'dark';
+    renderAll();
+  });
+
+  $('scaleSeg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    state.scale = b.dataset.scale;
+    for (const x of $('scaleSeg').querySelectorAll('button')) x.setAttribute('aria-pressed', x === b);
+    renderGantt(); scrollToToday();
+  });
+  $('viewSeg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    state.view = b.dataset.view;
+    for (const x of $('viewSeg').querySelectorAll('button')) x.setAttribute('aria-pressed', x === b);
+    $('ganttScroll').classList.toggle('hidden', state.view !== 'gantt');
+    $('tableWrap').classList.toggle('hidden', state.view !== 'table');
+    renderAll();
+    if (state.view === 'gantt') scrollToToday();
+  });
+  $('fSort').addEventListener('change', e => { state.sort = e.target.value; renderAll(); });
+  $('fCat').addEventListener('change', e => { state.fCat = e.target.value; renderAll(); });
+  $('fStatus').addEventListener('change', e => { state.fStatus = e.target.value; renderAll(); });
+  $('fToday').addEventListener('change', e => { state.fToday = e.target.checked; renderAll(); });
+  $('btnClearToday').addEventListener('click', () => {
+    if (!tasks.some(t => t.today)) return;
+    pushUndo('TODAYをすべて解除しました');
+    for (const t of tasks) t.today = false;
+    markDirty();
+    renderAll();
+  });
+  $('fSearch').addEventListener('input', e => { state.fSearch = e.target.value; renderAll(); });
+
+  $('editForm').addEventListener('submit', e => { e.preventDefault(); saveEditor(); });
+  $('eRepeat').addEventListener('change', syncRepeatUI);
+  $('btnAddDate').addEventListener('click', () => {
+    const v = $('eDateAdd').value;
+    if (!v || editDates.includes(v)) return;
+    editDates.push(v);
+    $('eDateAdd').value = '';
+    renderDateChips();
+  });
+  $('btnSync').addEventListener('click', () => {
+    $('syncToken').value = sync.token;
+    $('syncInfo').textContent = syncConfigured()
+      ? '接続済み' + (sync.gistId ? '（Gist: ' + sync.gistId.slice(0, 8) + '…）' : '（初回同期待ち）')
+        + (lastSyncAt ? ' ／ 最終確認: ' + new Date(lastSyncAt).toLocaleTimeString('ja-JP') : '')
+        + ' ／ ローカル更新: ' + (lastModified ? new Date(lastModified).toLocaleTimeString('ja-JP') : 'なし')
+      : '未接続です。トークンを貼り付けて「接続」を押してください。';
+    $('syncDlg').showModal();
+  });
+  $('btnSyncSave').addEventListener('click', async () => {
+    const tok = $('syncToken').value.trim();
+    if (!tok) { $('syncInfo').textContent = 'トークンを入力してください。'; return; }
+    sync.token = tok;
+    saveSyncCfg();
+    $('syncInfo').textContent = '接続確認中…';
+    try {
+      await findOrCreateGist();
+      await initialSync();
+      $('syncInfo').textContent = '✓ 接続しました。以降は編集のたびに自動同期されます。';
+      $('btnSync').classList.add('synced');
+    } catch (e) {
+      $('syncInfo').textContent = '接続エラー: ' + e.message;
+    }
+  });
+  $('btnSyncClose').addEventListener('click', () => $('syncDlg').close());
+  $('btnSyncOff').addEventListener('click', () => {
+    sync = { token: '', gistId: '' };
+    saveSyncCfg();
+    $('syncToken').value = '';
+    $('syncInfo').textContent = '連携を解除しました（クラウド上のデータは残っています）。';
+    $('btnSync').classList.remove('synced');
+  });
+  $('btnPush').addEventListener('click', async () => {
+    if (!syncConfigured()) { $('syncInfo').textContent = '先に「接続」してください。'; return; }
+    $('syncInfo').textContent = '保存中…';
+    await pushCloud(true);
+  });
+  $('btnPull').addEventListener('click', async () => {
+    if (!syncConfigured()) { $('syncInfo').textContent = '先に「接続」してください。'; return; }
+    $('syncInfo').textContent = '読込中…';
+    try {
+      const remote = await pullCloud();
+      if (applyCloud(remote, true)) $('syncInfo').textContent = '✓ クラウドのデータを読み込みました。';
+      else $('syncInfo').textContent = 'クラウドにまだデータがありません。';
+    } catch (e) { $('syncInfo').textContent = '読込エラー: ' + e.message; }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && syncTimer) { clearTimeout(syncTimer); syncTimer = null; pushCloud(false); }
+    if (document.visibilityState === 'visible') pollCloud(); // タブに戻ったら他端末の更新を確認
+  });
+  setInterval(pollCloud, 45000); // 45秒ごとに他端末の更新を確認
+  $('btnCatMgr').addEventListener('click', () => { renderCatMgr(); $('catDlg').showModal(); });
+  $('btnCloseCat').addEventListener('click', () => $('catDlg').close());
+  $('btnAddCat').addEventListener('click', addCategory);
+  $('newCatName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addCategory(); } });
+  $('btnCancel').addEventListener('click', () => $('editDlg').close());
+  $('btnDelete').addEventListener('click', () => {
+    if (editingId === null) return;
+    $('editDlg').close();
+    deleteTask(editingId);
+  });
+  $('btnUndo').addEventListener('click', doUndo);
+  $('btnUndoTop').addEventListener('click', doUndo);
+  window.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+      if ($('editDlg').open) return;
+      if (e.target && e.target.closest && e.target.closest('input, textarea, select')) return;
+      e.preventDefault();
+      doUndo();
+    }
+  });
+  window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+  if (syncConfigured()) { $('btnSync').classList.add('synced'); initialSync(); }
+}
+init();
+
+</script>
+</body>
+</html>
