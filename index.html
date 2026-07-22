@@ -341,8 +341,8 @@
     max-height: 92vh; max-height: 92dvh;                 /* 画面内に収める */
   }
   dialog::backdrop { background: rgba(0,0,0,.35); }
-  /* 編集画面: 本文だけスクロールし、見出し・保存ボタンは常に見える */
-  #editDlg { display: flex; flex-direction: column; overflow: hidden; }
+  /* 編集画面: 本文だけスクロールし、見出し・保存ボタンは常に見える（開いている時だけ適用） */
+  #editDlg[open] { display: flex; flex-direction: column; overflow: hidden; }
   #editForm { display: flex; flex-direction: column; min-height: 0; flex: 1; }
   #editForm .m-head, #editForm .m-foot { flex: none; }
   #editForm .m-body { flex: 1; min-height: 0; overflow-y: auto; }
@@ -444,6 +444,8 @@
     /* スマホの上部は「新規タスク」だけ（同期は未接続のときだけJSで表示） */
     #btnUndoTop, #btnXlsx, #btnJson, #btnImport, #btnTheme { display: none !important; }
     .stats { display: none; }                 /* タスク数タイルはスマホでは非表示 */
+    /* スマホではフィルター類を全部隠す（ガント/テーブル切替だけ残す） */
+    #scaleSeg, #fSort, #fCat, #btnCatMgr, #fStatus, #btnClearToday, #fSearch, .filters .chk { display: none; }
     .gantt-scroll, .table-wrap { max-height: none; }
     .g-memo, .g-prog { display: none; }        /* メモ・進捗列は畳む（タップで編集画面から見られる） */
     .g-left { width: 150px; min-width: 150px; }
