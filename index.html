@@ -460,7 +460,6 @@
     <button class="btn" id="btnXlsx" title="Excel形式でダウンロード">Excel出力<span class="dirty-dot"></span></button>
     <button class="btn" id="btnJson" title="JSON形式で保存（再読込用）">JSON保存</button>
     <button class="btn" id="btnImport" title="JSON / Excelファイルを読み込み">読込</button>
-    <button class="btn" id="btnReset" title="編集内容を消去して元のTo Doリストに戻す">リセット</button>
     <input type="file" id="fileInput" accept=".json,.xlsx" class="hidden">
     <button class="btn" id="btnSync" title="GitHub Gistでどこからでも同じデータを見られるようにする">☁ 同期</button>
     <button class="btn" id="btnTheme" title="ライト/ダーク切替">◐</button>
@@ -1819,17 +1818,6 @@ function init() {
   $('btnXlsx').addEventListener('click', exportXlsx);
   $('btnJson').addEventListener('click', exportJson);
   $('btnImport').addEventListener('click', () => $('fileInput').click());
-  $('btnReset').addEventListener('click', () => {
-    pushUndo('初期データに戻しました');
-    tasks = JSON.parse(JSON.stringify(INITIAL));
-    cats = JSON.parse(JSON.stringify(INITIAL_CATS));
-    nextId = Math.max(...tasks.map(t => t.id)) + 1;
-    if (storageOK) { try { localStorage.removeItem(STORE_KEY); } catch (e) {} }
-    dirty = false;
-    $('btnXlsx').classList.remove('is-dirty');
-    buildCatFilter();
-    renderAll();
-  });
   $('fileInput').addEventListener('change', e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ''; });
   $('btnTheme').addEventListener('click', () => {
     document.documentElement.dataset.theme = isDark() ? 'light' : 'dark';
