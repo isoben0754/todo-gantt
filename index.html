@@ -341,11 +341,11 @@
     max-height: 92vh; max-height: 92dvh;                 /* 画面内に収める */
   }
   dialog::backdrop { background: rgba(0,0,0,.35); }
-  /* 編集画面: 本文だけスクロールし、見出し・保存ボタンは常に見える（開いている時だけ適用） */
-  #editDlg[open] { display: flex; flex-direction: column; overflow: hidden; }
-  #editForm { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  /* 編集画面: dialog自体のdisplayは触らず（＝閉じている時はブラウザ標準で非表示）、
+     中のフォームで高さを制御して本文だけスクロール、見出し・保存ボタンは常に見える */
+  #editForm { display: flex; flex-direction: column; max-height: 92vh; max-height: 92dvh; }
   #editForm .m-head, #editForm .m-foot { flex: none; }
-  #editForm .m-body { flex: 1; min-height: 0; overflow-y: auto; }
+  #editForm .m-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
   #catDlg, #syncDlg { overflow-y: auto; }               /* 短いダイアログは全体スクロールで対応 */
   .m-head { padding: 16px 20px 0; font-size: 16px; font-weight: 700; }
   .m-body { padding: 12px 20px 4px; display: grid; gap: 11px; }
