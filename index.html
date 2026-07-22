@@ -426,21 +426,21 @@
   }
   /* スマホ: メモ・進捗列は非表示（タップで編集画面から見られる）。チャートを広く */
   @media (max-width: 600px) {
-    .app { padding: 8px 8px 6px; }
-    .topbar { gap: 6px; padding-bottom: 6px; }
+    .app { padding: 6px 6px 4px; }
+    .topbar { gap: 5px 6px; padding-bottom: 6px; }
     .topbar h1 { font-size: 15px; }
+    .topbar .date-note { font-size: 11px; }
     .btn { padding: 5px 9px; font-size: 12px; }
-    .stats { grid-template-columns: repeat(4, 1fr); gap: 5px; }
-    .tile { padding: 4px 8px 3px; border-radius: 8px; }
-    .tile .label { font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tile .value { font-size: 16px; }
-    .tile .sub { display: none; }
-    .g-memo, .g-prog { display: none; }
-    .g-left { width: 148px; min-width: 148px; }
-    .g-row:not(.g-head) .g-left { padding-right: 54px; }
+    .stats { display: none; }                 /* タスク数タイルはスマホでは非表示 */
+    .gantt-scroll, .table-wrap { max-height: none; }
+    .g-memo, .g-prog { display: none; }        /* メモ・進捗列は畳む（タップで編集画面から見られる） */
+    .g-left { width: 150px; min-width: 150px; }
+    .g-row:not(.g-head) .g-left { padding-right: 52px; }
     .del-btn { display: none; }
-    .nodate-hint { left: 160px; }
+    .today-toggle { right: 5px; padding: 2px 6px; }
+    .nodate-hint { left: 162px; }
     .filters { gap: 6px; }
+    .foot-note { display: none; }              /* 注意書きは省略して縦を稼ぐ */
   }
   /* タッチ端末はホバーが無いので削除ボタンを常時表示 */
   @media (hover: none) and (min-width: 601px) {
