@@ -431,16 +431,29 @@
     .topbar h1 { font-size: 15px; }
     .topbar .date-note { font-size: 11px; }
     .btn { padding: 5px 9px; font-size: 12px; }
+    /* スマホの上部は「新規タスク」だけ（同期は未接続のときだけJSで表示） */
+    #btnUndoTop, #btnXlsx, #btnJson, #btnImport, #btnTheme { display: none !important; }
     .stats { display: none; }                 /* タスク数タイルはスマホでは非表示 */
     .gantt-scroll, .table-wrap { max-height: none; }
     .g-memo, .g-prog { display: none; }        /* メモ・進捗列は畳む（タップで編集画面から見られる） */
     .g-left { width: 150px; min-width: 150px; }
-    .g-row:not(.g-head) .g-left { padding-right: 52px; }
+    .g-row:not(.g-head) .g-left { padding-right: 50px; padding-top: 2px; padding-bottom: 2px; }
     .del-btn { display: none; }
-    .today-toggle { right: 5px; padding: 2px 6px; }
     .nodate-hint { left: 162px; }
     .filters { gap: 6px; }
     .foot-note { display: none; }              /* 注意書きは省略して縦を稼ぐ */
+    /* チャートの文字を小さくして一画面の情報量を増やす */
+    .task-name { font-size: 10px; }
+    .task-meta { font-size: 8.5px; gap: 4px; margin-top: 0; }
+    .cat-chip .sw { width: 7px; height: 7px; }
+    .badge, .today-flag { font-size: 8.5px; }
+    .today-toggle { right: 4px; font-size: 7.5px; padding: 1.5px 5px; }
+    .g-head .unit-cell { font-size: 9px; }
+    .g-head .month-cell { font-size: 10px; }
+    .left-head-label { font-size: 9.5px; }
+    .bar-label, .occ-label, .note-inline { font-size: 8.5px; }
+    .bar { height: 13px; }
+    .g-row:not(.g-head) .g-timeline { min-height: 30px !important; }
   }
   /* タッチ端末はホバーが無いので削除ボタンを常時表示 */
   @media (hover: none) and (min-width: 601px) {
@@ -1600,6 +1613,10 @@ let lastModified = 0;
 let syncTimer = null, syncBusy = false;
 const syncConfigured = () => !!sync.token;
 function saveSyncCfg() { try { localStorage.setItem(SYNC_KEY, JSON.stringify(sync)); } catch (e) {} }
+function updateMobileSyncBtn() { // スマホでは未接続のときだけ「同期」を表示（接続後は「新規タスク」だけ）
+  const mobile = window.matchMedia('(max-width: 600px)').matches;
+  $('btnSync').style.display = (mobile && syncConfigured()) ? 'none' : '';
+}
 function setSyncStatus(msg, ok) {
   const n = $('saveNote');
   n.textContent = msg;
@@ -1881,6 +1898,7 @@ function init() {
       await initialSync();
       $('syncInfo').textContent = '✓ 接続しました。以降は編集のたびに自動同期されます。';
       $('btnSync').classList.add('synced');
+      updateMobileSyncBtn();
     } catch (e) {
       $('syncInfo').textContent = '接続エラー: ' + e.message;
     }
@@ -1892,6 +1910,7 @@ function init() {
     $('syncToken').value = '';
     $('syncInfo').textContent = '連携を解除しました（クラウド上のデータは残っています）。';
     $('btnSync').classList.remove('synced');
+    updateMobileSyncBtn();
   });
   $('btnPush').addEventListener('click', async () => {
     if (!syncConfigured()) { $('syncInfo').textContent = '先に「接続」してください。'; return; }
@@ -1934,6 +1953,8 @@ function init() {
   });
   window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
   if (syncConfigured()) { $('btnSync').classList.add('synced'); initialSync(); }
+  updateMobileSyncBtn();
+  window.addEventListener('resize', updateMobileSyncBtn);
 }
 init();
 
